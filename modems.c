@@ -434,7 +434,7 @@ void modem_poll(int mode){
 
 	if (current_mode != mode){
 		//flush out the past decodes
-		printf("modem_poll set to %d\n", mode);
+		//printf("modem_poll set to %d\n", mode);
 		current_mode = mode;
 		int l;
 		do{

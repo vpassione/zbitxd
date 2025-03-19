@@ -14,6 +14,7 @@
 #include "sdr.h"
 #include "sdr_ui.h"
 #include "modem_ft8.h"
+#include "logbook.h"
 
 #include "ft8_lib/common/common.h"
 #include "ft8_lib/common/wave.h"
@@ -488,6 +489,9 @@ static int sbitx_ft8_decode(float *signal, int num_samples, bool is_ft8)
           sprintf(buff, "%s %3d %+03d %-4.0f ~  %s\n", time_str, 
 						cand->score, cand->snr, freq_hz, message.text);
 
+
+				//message_add(char *mode, unsigned int frequency, int outgoing, char *message);
+					message_add("FT8", freq_hz, 0, message.text);
 					if (strstr(buff, mycallsign_upper)){
 						write_console(FONT_FT8_REPLY, buff);
 						ft8_process(buff, FT8_CONTINUE_QSO);
@@ -496,19 +500,6 @@ static int sbitx_ft8_decode(float *signal, int num_samples, bool is_ft8)
 						write_console(FONT_FT8_RX, buff);
 
 	//				save_message('R', cand->score, cand-snr,freq_hz, message.text);
-					n_decodes++;
-				sprintf(buff, "%s %3d %+03d %-4.0f ~  %s\n", time_str, 
-					cand->score, cand->snr, freq_hz, message.text);
-
-				if (strstr(buff, mycallsign_upper)){
-					write_console(FONT_FT8_REPLY, buff);
-					//tlog("mycall", buff, 0);
-					ft8_process(buff, FT8_CONTINUE_QSO);
-				}
-				else {
-					write_console(FONT_FT8_RX, buff);
-					//tlog("other ", buff, 0);
-				}
 				n_decodes++;
       }
     }
@@ -550,6 +541,7 @@ static void ft8_start_tx(int offset_seconds){
 
   sprintf(buff, "%02d%02d%02d  TX +00 %04d ~  %s\n", t->tm_hour, t->tm_min, t->tm_sec, ft8_pitch, ft8_tx_text);
 	write_console(FONT_FT8_TX, buff);
+	message_add("FT8", ft8_pitch, 1, ft8_tx_text);
 
 	ft8_tx_nsamples = sbitx_ft8_encode(ft8_tx_text, ft8_pitch, ft8_tx_buff, false); 
 	ft8_tx_buff_index = offset_seconds * 96000;
@@ -879,7 +871,6 @@ void ft8_process(char *message, int operation){
 		printf("FT8: Not a message for %s\n", mycall);
 		return;
 	}
-
 
 	if (!strcmp(m3, "73")){
 		ft8_abort();

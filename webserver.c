@@ -177,6 +177,7 @@ static void web_despatcher(struct mg_connection *c, struct mg_ws_message *wm){
 			sprintf(buff, "%s %s", field, value);
 		else
 			strcpy(buff, field);
+		printf("remote[%s]\n", buff); 
 		remote_execute(buff);
 		get_updates(c, 0);
 	}
@@ -211,7 +212,6 @@ static void fn(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
   } else if (ev == MG_EV_WS_MSG) {
     // Got websocket frame. Received data is wm->data
     struct mg_ws_message *wm = (struct mg_ws_message *) ev_data;
-//		printf("ws request,  client to %x:%d\n", c->rem.ip, c->rem.port);
     web_despatcher(c, wm);
   }
   (void) fn_data;

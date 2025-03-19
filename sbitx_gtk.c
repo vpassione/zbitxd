@@ -55,7 +55,7 @@ void change_band(char *request);
 
 /* command  buffer for commands received from the remote */
 struct Queue q_remote_commands;
-struct Queue q_tx_text;
+struct Queue q_zbitx_console;
 
 /* Front Panel controls */
 char pins[15] = {0, 2, 3, 6, 7, 
@@ -154,8 +154,8 @@ struct font_style {
 guint key_modifier = 0;
 
 struct font_style font_table[] = {
-	{FONT_FIELD_LABEL, 0, 1, 1, "Mono", 14, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
-	{FONT_FIELD_VALUE, 1, 1, 1, "Mono", 14, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
+	{FONT_FIELD_LABEL, 0, 1, 1, "Mono", 12, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
+	{FONT_FIELD_VALUE, 1, 1, 1, "Mono", 12, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
 	{FONT_LARGE_FIELD, 0, 1, 1, "Mono", 14, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
 	{FONT_LARGE_VALUE, 1, 1, 1, "Arial", 24, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
 	{FONT_SMALL, 0, 1, 1, "Mono", 10, CAIRO_FONT_WEIGHT_NORMAL, CAIRO_FONT_SLANT_NORMAL},
@@ -206,8 +206,14 @@ int console_current_line = 0;
 int	console_selected_line = -1;
 struct Queue q_web;
 
-//oled stuf
-static uint8_t oled_available = 0;
+static uint8_t zbitx_available = 0;
+int update_logs = 0;
+#define ZBITX_I2C_ADDRESS 0xa
+void zbitx_init();
+void zbitx_poll(int all);
+void zbitx_pipe(int style, char *text);
+void zbitx_get_spectrum(char *buff);
+void zbitx_write(int style, char *text);
 
 // event ids, some of them are mapped from gtk itself
 #define FIELD_DRAW 0
@@ -406,12 +412,13 @@ static int tx_mode = MODE_USB;
 
 #define BAND80M	0
 #define BAND40M	1
-#define BAND30M 2	
-#define BAND20M 3	
-#define BAND17M 4	
-#define BAND15M 5
-#define BAND12M 6 
-#define BAND10M 7 
+#define BAND60M 2
+#define BAND30M 3 	
+#define BAND20M 4 	
+#define BAND17M 5	
+#define BAND15M 6 
+#define BAND12M 7 
+#define BAND10M 8  
 
 struct band band_stack[] = {
 	{"80M", 3500000, 4000000, 0, 
@@ -423,15 +430,15 @@ struct band band_stack[] = {
 	{"30M", 10100000, 10150000, 0,
 		{10100000, 10100000, 10136000, 10150000}, {MODE_CW, MODE_CW, MODE_USB, MODE_USB}},
 	{"20M", 14000000, 14400000, 0,
-		{14010000, 14040000, 14074000, 14200000}, {MODE_CW, MODE_CW, MODE_USB, MODE_USB}},
+		{14000000, 14400000, 14074000, 14200000}, {MODE_CW, MODE_CW, MODE_USB, MODE_USB}},
 	{"17M", 18068000, 18168000, 0,
 		{18068000, 18100000, 18110000, 18160000}, {MODE_CW, MODE_CW, MODE_USB, MODE_USB}},
 	{"15M", 21000000, 21500000, 0,
-		{21010000, 21040000, 21074000, 21250000}, {MODE_CW, MODE_CW, MODE_USB, MODE_USB}},
+		{21100000, 21500000, 21074000, 21250000}, {MODE_CW, MODE_CW, MODE_USB, MODE_USB}},
 	{"12M", 24890000, 24990000, 0,
 		{24890000, 24910000, 24950000, 24990000}, {MODE_CW, MODE_CW, MODE_USB, MODE_USB}},
 	{"10M", 28000000, 29700000, 0,
-		{28000000, 28040000, 28074000, 28250000}, {MODE_CW, MODE_CW, MODE_USB, MODE_USB}},
+		{28000000, 28000000, 28074000, 28250000}, {MODE_CW, MODE_CW, MODE_USB, MODE_USB}},
 };
 
 
@@ -516,7 +523,7 @@ struct field main_controls[] = {
 	{ "r1:agc", NULL, 415, 5, 40, 40, "AGC", 40, "SLOW", FIELD_SELECTION, FONT_FIELD_VALUE, 
 		"OFF/SLOW/MED/FAST", 0, 1024, 1,COMMON_CONTROL},
 	{ "tx_power", NULL, 455, 5, 40, 40, "DRIVE", 40, "40", FIELD_NUMBER, FONT_FIELD_VALUE, 
-		"", 1, 100, 1,COMMON_CONTROL},
+		"", 0, 100, 5,COMMON_CONTROL},
 
 
 	{ "r1:freq", do_tuning, 600, 0, 150, 49, "FREQ", 5, "14000000", FIELD_NUMBER, FONT_LARGE_VALUE, 
@@ -541,7 +548,7 @@ struct field main_controls[] = {
 		"", 50, 5000, 50,COMMON_CONTROL},
 
 	{ "r1:mode", NULL, 5, 5, 40, 40, "MODE", 40, "USB", FIELD_SELECTION, FONT_FIELD_VALUE, 
-		"USB/LSB/CW/CWR/FT8/AM/DIGITAL/2TONE", 0,0,0, COMMON_CONTROL},
+		"USB/LSB/CW/CWR/FT8/AM/DIGI/2TONE", 0,0,0, COMMON_CONTROL},
 
 	/* logger controls */
 
@@ -601,7 +608,7 @@ struct field main_controls[] = {
 
 	{"waterfall", do_waterfall, 400, 201 , 400, 99, "WATERFALL", 70, "7000 KHz", FIELD_STATIC, FONT_SMALL, 
 		"", 0,0,0, COMMON_CONTROL},
-	{"#console", do_console, 0, 100, 400, 200, "CONSOLE", 70, "console box", FIELD_CONSOLE, FONT_LOG, 
+	{"#console", do_console, 0, 100, 400, 200, "CONSOLE", 70, "", FIELD_CONSOLE, FONT_LOG, 
 		"nothing valuable", 0,0,0, COMMON_CONTROL},
 
 	{"#log_ed", NULL, 0, 480, 480, 20, "", 70, "", FIELD_STATIC, FONT_LOG, 
@@ -654,6 +661,8 @@ struct field main_controls[] = {
     "", 0,10000,1, COMMON_CONTROL},
   { "#vswr", NULL, 1000, -1000, 50, 50, "REF", 40, "300", FIELD_NUMBER, FONT_FIELD_VALUE,
     "", 0,10000, 1, COMMON_CONTROL},
+  { "#batt", NULL, 1000, -1000, 50, 50, "VBATT", 40, "300", FIELD_NUMBER, FONT_FIELD_VALUE,
+    "", 0,10000, 1, COMMON_CONTROL},
   { "bridge", NULL, 1000, -1000, 50, 50, "BRIDGE", 40, "100", FIELD_NUMBER, FONT_FIELD_VALUE,
     "", 10,100, 1, COMMON_CONTROL},
 	//cw, ft8 and many digital modes need abort
@@ -665,6 +674,9 @@ struct field main_controls[] = {
   {"#bw_cw", NULL, 1000, -1000, 50, 50, "BW_CW", 40, "400", FIELD_NUMBER, FONT_FIELD_VALUE,
     "", 300, 3000, 50, 0},
   {"#bw_digital", NULL, 1000, -1000, 50, 50, "BW_DIGITAL", 40, "3000", FIELD_NUMBER, FONT_FIELD_VALUE,
+    "", 300, 3000, 50, 0},
+
+  {"#smeter", NULL, 1000, -1000, 50, 50, "SMETER", 40, "3000", FIELD_NUMBER, FONT_FIELD_VALUE,
     "", 300, 3000, 50, 0},
 
 	//FT8 controls
@@ -1082,6 +1094,8 @@ void write_console(int style, char *raw_text){
 	hd_decorate(style, raw_text, decorated);
 	text = decorated;
 	web_write(style, text);
+	zbitx_write(style, text);
+
 	//move to a new line if the style has changed
 	if (style != console_style){
 		q_write(&q_web, '{');
@@ -1092,7 +1106,7 @@ void write_console(int style, char *raw_text){
 		console_stream[console_current_line].style = style;
 		switch(style){
 			case FONT_FT8_RX:
-			case FONT_FLDIGI_RX:
+		case FONT_FLDIGI_RX:
 			case FONT_CW_RX:
 				break;
 			case FONT_FT8_TX:
@@ -1116,8 +1130,6 @@ void write_console(int style, char *raw_text){
 	}
 */	
 	write_to_remote_app(style, raw_text);
-	if (oled_available)
-		oled_console(style, text);
 
 	int console_line_max = MIN(console_cols, MAX_LINE_LENGTH);
 	while(*text){
@@ -1414,9 +1426,8 @@ static void save_user_settings(int forced){
 		for (int j = 0; j < STACK_DEPTH; j++)
 			fprintf(f, "freq%d=%d\nmode%d=%d\n", j, band_stack[i].freq[j], j, band_stack[i].mode[j]);
 	}
-
-
 	fclose(f);
+
 	last_save_at = now;	// As proposed by Dave N1AI
 	settings_updated = 0;
 }
@@ -1447,9 +1458,119 @@ void enter_qso(){
 		field_str("CALL"), field_str("SENT"), field_str("NR"), 
 		field_str("RECV"), field_str("EXCH"));
 	write_console(FONT_LOG, buff);
+	update_logs = 1;
 }
 
-static int user_settings_handler(void* user, const char* section, 
+static int user_settings_handler(void *user, const char *section,
+								 const char *name, const char *value)
+{
+	char cmd[1000];
+	char new_value[200];
+
+	strcpy(new_value, value);
+
+	if (!strcmp(section, "r1"))
+	{
+		sprintf(cmd, "%s:%s", section, name);
+		set_field(cmd, new_value);
+	}
+	else if (!strcmp(section, "tx"))
+	{
+		strcpy(cmd, name);
+		set_field(cmd, new_value);
+	}
+	else if (!strncmp(section, "#kbd", 4))
+	{
+		return 1; // skip the keyboard values
+	}
+	// if it is an empty section
+	else if (strlen(section) == 0)
+	{
+		sprintf(cmd, "%s", name);
+		// skip the button actions
+		struct field *f = get_field(cmd);
+		if (f)
+		{
+			if (f->value_type != FIELD_BUTTON)
+			{
+				set_field(cmd, new_value);
+			}
+		/*
+			char *bands = "#80m#60m#40m#30m#20m#17m#15m#12m#10m";
+			char *ptr = strstr(bands, cmd);
+			if (ptr != NULL)
+			{
+				// Set the selected band stack index
+				int band = (ptr - bands) / 4;
+				int ix = get_band_stack_index(new_value);
+				if (ix < 0)
+				{
+					// printf("Band stack index for %c%cm set to 0!\n", *(ptr+1), *(ptr+2));
+					ix = 0;
+				}
+				band_stack[band].index = ix;
+				settings_updated++;
+			}
+		*/
+		}
+		return 1;
+	}
+
+	// band stacks
+	int band = -1;
+	if (!strcmp(section, "80M"))
+		band = BAND80M;
+	else if (!strcmp(section, "60M"))
+		band = BAND60M;
+	else if (!strcmp(section, "40M"))
+		band = BAND40M;
+	else if (!strcmp(section, "30M"))
+		band = BAND30M;
+	else if (!strcmp(section, "20M"))
+		band = BAND20M;
+	else if (!strcmp(section, "17M"))
+		band = BAND17M;
+	else if (!strcmp(section, "15M"))
+		band = BAND15M;
+	else if (!strcmp(section, "12M"))
+		band = BAND12M;
+	else if (!strcmp(section, "10M"))
+		band = BAND10M;
+
+	if (band != -1)
+	{
+		if (strstr(name, "freq"))
+		{
+			int freq = atoi(value);
+			if (freq < band_stack[band].start || band_stack[band].stop < freq)
+				return 1;
+		}
+		if (!strcmp(name, "freq0"))
+			band_stack[band].freq[0] = atoi(value);
+		else if (!strcmp(name, "freq1"))
+			band_stack[band].freq[1] = atoi(value);
+		else if (!strcmp(name, "freq2"))
+			band_stack[band].freq[2] = atoi(value);
+		else if (!strcmp(name, "freq3"))
+			band_stack[band].freq[3] = atoi(value);
+		else if (!strcmp(name, "mode0"))
+			band_stack[band].mode[0] = atoi(value);
+		else if (!strcmp(name, "mode1"))
+			band_stack[band].mode[1] = atoi(value);
+		else if (!strcmp(name, "mode2"))
+			band_stack[band].mode[2] = atoi(value);
+		else if (!strcmp(name, "mode3"))
+			band_stack[band].mode[3] = atoi(value);
+/*		else if (!strcmp(name, "gain"))
+			band_stack[band].if_gain = atoi(value);
+		else if (!strcmp(name, "drive"))
+			band_stack[band].drive = atoi(value);
+		else if (!strcmp(name, "tnpwr"))
+			band_stack[band].tnpwr = atoi(value);*/
+	}
+	return 1;
+}
+static int user_settings_handler_old(void* user, const char* section, 
             const char* name, const char* value)
 {
     char cmd[1000];
@@ -1482,20 +1603,22 @@ static int user_settings_handler(void* user, const char* section,
 		int band = -1;
 		if (!strcmp(section, "80M"))
 			band = 0;
-		else if (!strcmp(section, "40M"))
+		else if (!strcmp(section, "60M"))
 			band = 1;
-		else if (!strcmp(section, "30M"))
+		else if (!strcmp(section, "40M"))
 			band = 2;
-		else if (!strcmp(section, "20M"))
+		else if (!strcmp(section, "30M"))
 			band = 3;
-		else if (!strcmp(section, "17M"))
+		else if (!strcmp(section, "20M"))
 			band = 4;
-		else if (!strcmp(section, "15M"))
+		else if (!strcmp(section, "17M"))
 			band = 5;
-		else if (!strcmp(section, "12M"))	
+		else if (!strcmp(section, "15M"))
 			band = 6;
+		else if (!strcmp(section, "12M"))	
+			band = 7;
 		else if (!strcmp(section, "10M"))
-			band = 7;	
+			band = 8;	
 
 		//get the freq out first
 		int freq = atoi(value);
@@ -1697,15 +1820,94 @@ void draw_waterfall(struct field *f, cairo_t *gfx){
 	cairo_fill(gfx);
 }
 
-void draw_s_meter(struct field *spectrum, cairo_t *gfx){
-	rect(gfx, spectrum->x+1, spectrum->y+2, 200 , 10, SELECTED_LINE, 2);
+void draw_smeter(struct field *f_spectrum, cairo_t *gfx){
+		int s_meter_value = 0;
+		struct rx *current_rx = rx_list;
+
+		// Pass the rx_gain along with the rx pointer
+		char buff[30];
+		sdr_request("smeter=0", buff);
+		s_meter_value = atoi(buff);
+		field_set("SMETER", buff);
+
+		// Lets separate the S-meter value into s-units and additional dB
+		int s_units = s_meter_value / 100;
+		int additional_db = s_meter_value % 100;
+
+		int box_width = 15;
+		int box_height = 5;
+		int spacing = 2;
+		int start_x = f_spectrum->x + 5;
+		int start_y = f_spectrum->y + 1;
+
+		// Now we draw the s-meter boxes
+		for (int i = 0; i < 6; i++)
+		{
+			int box_x = start_x + i * (box_width + spacing);
+			int box_y = start_y;
+
+			// Change the box colors based on the s-meter value
+			if (i < 5)
+			{
+				// boxes (1, 3, 5, 7, 9)
+				if (s_units >= (2 * i + 1))
+				{
+					cairo_set_source_rgb(gfx, 0.0, 1.0, 0.0); // Green color
+				}
+				else
+				{
+					cairo_set_source_rgb(gfx, 0.2, 0.2, 0.2); // Dark grey color
+				}
+			}
+			else
+			{
+				// For 20+ dB box
+				if (s_units >= 9 && additional_db > 0)
+				{
+					cairo_set_source_rgb(gfx, 1.0, 0.0, 0.0); // Red color
+				}
+				else
+				{
+					cairo_set_source_rgb(gfx, 0.2, 0.2, 0.2); // Dark grey color
+				}
+			}
+
+			cairo_rectangle(gfx, box_x, box_y, box_width, box_height);
+			cairo_fill(gfx);
+		}
+
+		// Now we place the labels below the boxes
+		cairo_set_source_rgb(gfx, 1.0, 1.0, 1.0);				// white
+		cairo_move_to(gfx, start_x, start_y + box_height + 15); // x, y position
+		for (int i = 0; i < 6; i++)
+		{
+			char label[5];
+			if (i < 5)
+			{
+				snprintf(label, sizeof(label), "%d", 1 + 2 * i);
+			}
+			else
+			{
+				snprintf(label, sizeof(label), "20+");
+			}
+
+			cairo_move_to(gfx, start_x + i * (box_width + spacing), start_y + box_height + 15);
+			cairo_show_text(gfx, label);
+		}
+
+	int b = field_int("VBATT")/10;
+	if (b > 0){
+		char buff[20];
+		sprintf(buff, "Batt %d.%d V", b/10, b %  10);
+		cairo_move_to(gfx, f_spectrum->x + 120, f_spectrum->y+7);
+		cairo_show_text(gfx, buff);
+	}
 }
 
 void draw_spectrum_grid(struct field *f_spectrum, cairo_t *gfx){
 	int sub_division, grid_height;
 	struct field *f = f_spectrum;
 
-	draw_s_meter(f, gfx);
 	sub_division = f->width / 10;
 	grid_height = f->height - (font_table[FONT_SMALL].height * 4 / 3); 
 
@@ -1885,6 +2087,8 @@ void draw_spectrum(struct field *f_spectrum, cairo_t *gfx){
 		int needle_x  = (f->width*(MAX_BINS/2 - r->tuned_bin))/(MAX_BINS/2);
 		fill_rect(gfx, f->x + needle_x, f->y, 1, grid_height,  SPECTRUM_NEEDLE);
 	}
+
+	draw_smeter(f, gfx);
 }
 
 int waterfall_fn(struct field *f, cairo_t *gfx, int event, int a, int b){
@@ -2508,7 +2712,6 @@ int do_waterfall(struct field *f, cairo_t *gfx, int event, int a, int b, int c){
 }
 
 void remote_execute(char *cmd){
-
 	if (q_remote_commands.overflow)
 		q_empty(&q_remote_commands);
 	while (*cmd)
@@ -3315,7 +3518,7 @@ static gboolean on_key_press (GtkWidget *widget, GdkEventKey *event, gpointer us
 }
 
 static gboolean on_scroll (GtkWidget *widget, GdkEventScroll *event, gpointer data) {
-	
+
 	if (f_focus){
 		if (event->direction == 0){
      if (!strcmp(get_field("reverse_scrolling")->value, "ON")){
@@ -3455,22 +3658,24 @@ uint8_t bcd2dec(uint8_t val){
 
 void rtc_read(){
 	uint8_t rtc_time[10];
+	char buff[100];
+	struct tm t;
+	time_t gm_now;
 
 	i2cbb_write_i2c_block_data(DS3231_I2C_ADD, 0, 0, NULL);
 
 	int e =  i2cbb_read_i2c_block_data(DS3231_I2C_ADD, 0, 8, rtc_time);
 	if (e <= 0){
 		printf("RTC not detected\n");
+		//go with the system time
+		time(&gm_now);
+		time_delta =(long)gm_now -(long)(millis()/1000l);
 		return;
 	}
 	for (int i = 0; i < 7; i++)
 		rtc_time[i] = bcd2dec(rtc_time[i]);
 
-	char buff[100];
-	
 	//convert to julian
-	struct tm t;
-	time_t gm_now;
 
 	t.tm_year 	= rtc_time[6] + 2000 - 1900;
 	t.tm_mon 	= rtc_time[5] - 1;
@@ -3638,110 +3843,6 @@ void query_swr(){
 	set_field("#vswr", buff);
 }
 
-void oled_toggle_band(){
-	unsigned int freq_now = field_int("FREQ");
-	//choose the next band 
-	int  band_now = 1;
-	for (int i = 0; i < sizeof(band_stack)/sizeof(struct band); i++){
-		if (band_stack[i].start <= freq_now && freq_now <= band_stack[i].stop)
-			band_now = i;	
-	}
-	if (band_now == (sizeof(band_stack)/sizeof(struct band)) -1)
-		change_band("80M");
-	else
-		change_band(band_stack[band_now+1].name); 
-}
-
-//if oled is detected, it will display the ip address on the oled
-// andwait for the tuning knob to be pressed to resume 
-
-void oled_setup(){
-	char ip_str[1000];
-
-	while(digitalRead(ENC1_SW) == HIGH){
-		ip_str[0] = 0;
-		FILE *pf = popen("hostname -I", "r");
-		if (pf){
-			fgets(ip_str, 100, pf);
-			pclose(pf);
-			//terminate the string at the first space
-			char *p = strchr(ip_str, ' ');
-			if (p)
-				*p = 0;
-			oled_clear();
-			oled_write(0,0, "Hi, zBitx is up on");
-			oled_write(0,1, ip_str);
-			oled_write(0, 2, "Press Func to start");
-			oled_refresh();
-		}
-		delay(100);
-	}
-	
-	oled_clear();
-	oled_write(0, 3, "Starting...");
-	oled_refresh();
-}
-
-
-char oled_screen_text[1000] = {0};
-void oled_update(){
-	char buff[1000];
-	char const *mode;
-	char const *p;
-
-	//draw out the radio display 
-	if (in_tx)
-		strcpy(buff, "T");
-	else if (!strcmp(field_str("SPLIT"), "ON"))
-		strcpy(buff, "S");
-	else if (!strcmp(field_str("VFO"), "A"))
-		strcpy(buff, "A");
-	else	
-		strcpy(buff, "B");
-	strcat(buff, ":");
-	strcat(buff, freq_with_separators(field_str("FREQ")));
-	
-	mode = field_str("MODE");
-	char *q = buff + strlen(buff);
-	strncpy(q, p, 5);
-	*(q + 5) = 0; 
-	strcat(buff, "\n>Audio:");
-	p = field_str("AUDIO");
-	strcat(buff, p);
-	strcat(buff, "\n Drive:");
-	strcat(buff, field_str("DRIVE"));
-	strcat(buff, "\n BW   :");
-	strcat(buff, field_str("BW"));
-	if (!strcmp(mode, "FT8")){
-		strcat(buff, "\n Pitch:");
-		strcat(buff, field_str("TX_PITCH"));
-	}
-	else if (!strcmp(mode, "LSB") || !strcmp(mode, "USB")){
-		strcat(buff, "\n Mic  :");
-		strcat(buff, field_str("MIC"));
-	}
-	else {
-		strcat(buff, "\n Pitch:");
-		strcat(buff, field_str("PITCH"));
-	}	
-
-	if (!strncmp(buff, oled_screen_text, sizeof(oled_screen_text)))
-		return;
-	strcpy(oled_screen_text, buff);
-	oled_clear();
-	
-	p = buff;
-	for (int i = 0; i < 8; i++){
-		p = oled_write(0, i, p);
-		if(*p == '\n')
-			p++;
-		else
-			break;
-	}
-	
-	oled_refresh();		
-}
-
 void hw_init(){
 	wiringPiSetup();
 	init_gpio_pins();
@@ -3753,10 +3854,6 @@ void hw_init(){
 
 	wiringPiISR(ENC2_A, INT_EDGE_BOTH, tuning_isr);
 	wiringPiISR(ENC2_B, INT_EDGE_BOTH, tuning_isr);
-	if (!oled_init()){
-		oled_available = 1;
-		oled_setup();
-	}
 }
 
 void hamlib_tx(int tx_input){
@@ -3769,7 +3866,6 @@ void hamlib_tx(int tx_input){
 		tx_off();
 	}
 }
-
 
 int get_cw_delay(){
 	return atoi(get_field("#cwdelay")->value);
@@ -3837,6 +3933,7 @@ int  web_get_console(char *buff, int max){
 	*buff = 0;
 	return i;
 }
+
 
 void web_get_spectrum(char *buff){
 
@@ -3919,6 +4016,195 @@ void set_radio_mode(char *mode){
 		field_set("MODE", umode);
 }
 
+void zbitx_write(int style, char *text){
+	char buffer[256];
+
+	if (!zbitx_available){
+		return;
+	}
+
+	if (strlen(text) > sizeof(buffer) - 10){
+		printf("*zbitx_write update is oversized\n");
+		return;
+	}
+	sprintf(buffer, "%d %s", style, text);
+	char *p = buffer;		
+	if (q_zbitx_console.overflow)
+		q_empty(&q_zbitx_console);
+	while (*p)
+		q_write(&q_zbitx_console, *p++);
+	q_write(&q_zbitx_console, 0);
+}
+
+//cramp all the spectrum into 250 points
+void zbitx_get_spectrum(char *buff){
+
+  int n_bins = (int)((1.0 * spectrum_span) / 46.875);
+  //the center frequency is at the center of the lower sideband,
+  //i.e, three-fourth way up the bins.
+  int starting_bin = (3 *MAX_BINS)/4 - n_bins/2;
+  int ending_bin = starting_bin + n_bins;
+
+	//printf("zbitx spectrum %d\n", millis());
+  int j;
+  if (in_tx){
+    strcpy(buff, "WF ");
+		j = strlen(buff);
+		float step = MOD_MAX/250.0;
+		//printf("wf on tx %d / %d", step, MOD_MAX);
+		for (float i = 0; i < MOD_MAX; i+= step){
+      int y = (2 * mod_display[(int)i]) + 32;
+      if (y > 127)
+        buff[j] = 127;
+			else if (y < 32)
+				buff[j] = ' ';
+      else
+        buff[j] = y;
+			j++;
+    }
+  }
+  else{
+    strcpy(buff, "WF ");
+		j = strlen(buff);
+		float step = (1.0  * (ending_bin - starting_bin))/250.0;
+		float i = 1.0 * starting_bin;
+    while(i <= (int) ending_bin){
+      int y = spectrum_plot[(int)i] + waterfall_offset;
+      if (y > 95)
+        buff[j++] = 127;
+      else if(y >= 0 )
+        buff[j++] = y + 32;
+      else
+        buff[j++] = ' ';
+			i += step;
+    }
+  }
+
+  buff[j++] = 0;
+//	if (in_tx)
+//		printf("%s : %d\n", buff, strlen(buff)); 
+  return;
+}
+
+static void zbitx_logs(){
+	char logbook_path[200];
+	char row_response[1000], row[1000];
+	char query[100];
+	char args[100];
+	int	row_id;
+
+	printf("Sending the last 50 log entries to zbitx\n");	
+	query[0] = 0;
+	row_id = -1;
+	logbook_query(NULL, row_id, logbook_path);
+	FILE *pf = fopen(logbook_path, "r");
+	if (!pf)
+		return;
+	while(fgets(row, sizeof(row), pf)){
+		sprintf(row_response, "QSO %s}", row);
+		i2cbb_write_i2c_block_data(ZBITX_I2C_ADDRESS, '{', strlen(row_response), row_response);
+	}
+	fclose(pf);
+}
+
+void zbitx_poll(int all){
+	char buff[3000];
+
+	int count = 0;
+	int e = 0;
+	int retry;
+	for (int i = 0; active_layout[i].cmd[0] > 0; i++){
+		struct field *f = active_layout+i;
+		if (!strcmp(f->label, "WATERFALL") || !strcmp(f->label, "SPECTRUM"))
+			continue;
+		if (all || f->update_remote){
+			sprintf(buff, "%s %s}", f->label, f->value);
+		
+			retry = 3;
+			do {
+				e = i2cbb_write_i2c_block_data(ZBITX_I2C_ADDRESS, '{', strlen(buff), buff);
+				if (!e){
+					if (retry < 3)
+						printf("Sucess on %d\n", retry);
+					break;
+				}
+				delay(3);
+				printf("Retrying I2C %d\n", retry);
+			}while(retry--);
+
+			f->update_remote = 0;
+			count++;
+			delay(10);
+		}
+	}
+	
+	//check if the console q has any new updates
+	while (q_length(&q_zbitx_console) > 0){
+		char remote_cmd[1000];
+		int c, i;
+
+		i = 0;
+		while(i < sizeof(remote_cmd)-3 && (c = q_read(&q_zbitx_console)) >= ' ')
+			remote_cmd[i++] = c;
+		remote_cmd[i++] = '}';
+		remote_cmd[i++] = 0;
+ 	
+		e = i2cbb_write_i2c_block_data(ZBITX_I2C_ADDRESS, '{', 
+			strlen(remote_cmd), remote_cmd);
+	}
+
+
+	zbitx_get_spectrum(buff);
+	strcat(buff, "}"); //terminate the block
+	//spectrum can be lost mometarily, it is alright	
+	delay(1);
+	i2cbb_write_i2c_block_data(0x0a, '{', strlen(buff), buff);
+
+	if(update_logs){
+		zbitx_logs();
+		update_logs = 0;
+	}
+
+	if(i2cbb_read_i2c_block_data(0xa, 0, 100, buff) != -1){
+		if(!strncmp(buff, "FT8 ", 4)){
+			char ft8_message[100];
+			hd_strip_decoration(ft8_message, buff + 4);
+			ft8_process(ft8_message, FT8_START_QSO);
+			printf("FT8 processing from zbitx\n");
+		}
+		else{
+			if (!strncmp(buff, "OPEN", 4))
+				update_logs = 1;
+			remote_execute(buff);
+		}
+	}
+}
+
+void zbitx_init(){
+	char hello[] = "9 zBitx is running\n}";
+ 	int e = i2cbb_write_i2c_block_data (ZBITX_I2C_ADDRESS, '{', 
+		strlen(hello), hello);
+	if (!e){
+		printf("zBitx front panel detected\n");
+		zbitx_available = 1;
+		zbitx_logs();
+
+		FILE *pf = popen("hostname -I", "r");
+		if (pf){
+			char ip_str[100], buff[100];
+			fgets(ip_str, 100, pf);
+			pclose(pf);
+			//terminate the string at the first space
+			char *p = strchr(ip_str, ' ');
+			if (p){
+				*p = 0;
+				sprintf(buff, "9 \nzBitx on http://%s\n}", ip_str);
+ 				i2cbb_write_i2c_block_data (ZBITX_I2C_ADDRESS, '{', 
+					strlen(buff), buff);
+			}
+		}
+	}
+}
 
 gboolean ui_tick(gpointer gook){
 	int static ticks = 0;
@@ -3929,7 +4215,7 @@ gboolean ui_tick(gpointer gook){
 		//read each command until the 
 		char remote_cmd[1000];
 		int c, i;
-		for (i = 0; i < sizeof(remote_cmd)-2 &&  (c = q_read(&q_remote_commands)) > 0; i++){
+		for (i = 0; i < sizeof(remote_cmd)-2 &&  (c = q_read(&q_remote_commands)) >= ' '; i++){
 			remote_cmd[i] = c;
 		}
 		remote_cmd[i] = 0;
@@ -3998,6 +4284,9 @@ gboolean ui_tick(gpointer gook){
 		char response[6], cmd[10];
 		cmd[0] = 1;
 
+		if (zbitx_available)
+			zbitx_poll(0);
+
 		if(in_tx){
 			char buff[10];
 
@@ -4021,9 +4310,6 @@ gboolean ui_tick(gpointer gook){
 				focus_field(get_field("r1:volume"));
 			printf("Focus is on %s\n", f_focus->label);
 		}
-		
-		if (digitalRead(ENC2_SW) == 0)
-			oled_toggle_band();
 
 		if (record_start)
 			update_field(get_field("#record"));
@@ -4067,8 +4353,6 @@ gboolean ui_tick(gpointer gook){
       gdk_window_set_cursor(gdk_get_default_root_window(), new_cursor);
     }
 
-		if (oled_available)
-			oled_update();
 		ticks = 0;
   }
 	//update_field(get_field("#text_in")); //modem might have extracted some text
@@ -4112,6 +4396,7 @@ void ui_init(int argc, char *argv[]){
 #pragma pop
 */
 	q_init(&q_web, 5000);
+	q_init(&q_zbitx_console, 1000);
 
   window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
   gtk_window_set_default_size(GTK_WINDOW(window), 800, 480);
@@ -4624,7 +4909,7 @@ void pre_ft8_check(char* message) {
 	The command format is "CMD VALUE", the CMD is an all uppercase text
 	that matches the label of a control.
 	The value is taken as a string past the separator space all the way
-	to the end of the string, including any spaces.
+	to the end of the string or new line, including any spaces.
 
 	It also handles many commands that don't map to a control
 	like metercal or txcal, etc.
@@ -4668,6 +4953,16 @@ void cmd_exec(char *cmd){
 		sprintf(response, "\n[Your callsign is set to %s]\n", get_field("#mycallsign")->value);
 		write_console(FONT_LOG, response);
 	}
+	else if (!strcmp(exec, "QSODEL")){
+		logbook_delete(atoi(args));
+		update_logs = 1;
+	}
+	else if (!strcmp(exec, "power"))
+		set_field("#fwdpower", args);
+	else if (!strcmp(exec, "vswr"))
+		set_field("#vswr", args);
+	else if (!strcmp(exec, "vbatt"))
+		set_field("#batt", args);
 	else if (!strcmp(exec, "metercal")){
 		meter_calibrate();
 	}
@@ -4859,7 +5154,6 @@ int main( int argc, char* argv[] ) {
 	console_init();
 
 	q_init(&q_remote_commands, 1000); //not too many commands
-	q_init(&q_tx_text, 100); //best not to have a very large q 
 
 // If a parameter was passed on the command line, use it as the audio output device	
 
@@ -4871,7 +5165,6 @@ int main( int argc, char* argv[] ) {
 	const char* ntp_server = "pool.ntp.org";
   sync_system_time(ntp_server);
 	rtc_sync();
-
 
 	struct field *f;
 	f = active_layout;
@@ -4894,6 +5187,7 @@ int main( int argc, char* argv[] ) {
 
 	strcpy(vfo_a_mode, "USB");
 	strcpy(vfo_b_mode, "LSB");
+	strcpy(tune_tx_saved_mode, "USB");	
 	set_field("#mycallsign", "NOBODY");
 	//vfo_a_freq = 14000000;
 	//vfo_b_freq = 7000000;
@@ -4956,11 +5250,16 @@ int main( int argc, char* argv[] ) {
 	remote_start();
 
 	rtc_read();
+	zbitx_init();
 
-//	open_url("http://127.0.0.1:8080");
-//	execute_app("chromium-browser --log-leve=3 "
-//	"--enable-features=OverlayScrollbar http://127.0.0.1:8080"
-//	"  &>/dev/null &");
+	if (zbitx_available)
+		zbitx_poll(1); // send all the field values
+
+	//switch to maximum priority
+	struct sched_param sch;
+	sch.sched_priority = sched_get_priority_max(SCHED_FIFO);
+	pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
+
   gtk_main();
   
   return 0;

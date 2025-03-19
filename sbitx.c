@@ -34,17 +34,19 @@ FILE *pf_debug = NULL;
 //unsigned int	wallclock = 0;
 
 #define TX_LINE 4
-#define TX_POWER 27
+#define RX_LINE 16
 #define BAND_SELECT 5
 #define LPF_A 5
 #define LPF_B 6
 #define LPF_C 10
 #define LPF_D 11
+#define LPF_E 26
 
 #define SBITX_DE (0)
 #define SBITX_V2 (1)
+#define SBITX_V4 (4)
 
-int sbitx_version = SBITX_V2;
+int sbitx_version = -1;
 int fwdpower, vswr;
 float fft_bins[MAX_BINS]; // spectrum ampltiudes  
 int spectrum_plot[MAX_BINS];
@@ -91,7 +93,7 @@ static double alc_level = 1.0;
 static int tr_relay = 0;
 static int rx_pitch = 700; //used only to offset the lo for CW,CWR
 static int bridge_compensation = 100;
-static double voice_clip_level = 0.04;
+static double voice_clip_level = 0.1;
 static int in_calibration = 1; // this turns off alc, clipping et al
 static int mode_in_tune = MODE_USB;
 static int in_tune_tx = 0;
@@ -242,6 +244,52 @@ void spectrum_update(){
 	}
 }
 
+#define SCALING_TRIM 200.0 // Use this to tune your meter response 2.7 worked at 51% and my inverted L
+// S-Meter test W2JON
+int calculate_s_meter() {
+	double signal_strength = 0.0;
+
+	// Summing up the magnitudes of the FFT output bins
+	for (int i = 0; i < MAX_BINS / 2; i++)
+	{
+		double magnitude = cabs(rx_list->fft_time[i]); // Magnitude of complex FFT output in time domain
+		signal_strength += magnitude;
+	}
+
+	// Now average out the "signal strength"
+	signal_strength /= (MAX_BINS / 2);
+
+	// Logarithmic scaling based on rx_gain setting in percentage [0-100]
+	double gain_scaling_factor = log10((rx_gain * 1.0) / 100.0 + 1.0);
+
+	// Convert to pseudo dB
+	double reference_power = 1e-4; // 0.1 mW
+	double signal_power = signal_strength * signal_strength * reference_power;
+	double s_meter_db = 10 * log10(signal_power / reference_power); // pseudo dB
+
+	s_meter_db += gain_scaling_factor * SCALING_TRIM; // Adjust calcs dynamically based on rx_gain * SCALING_TRIM
+
+	// Calculate S-units and additional dB
+	int s_units = (int)(s_meter_db / 6.0);				   // Each S-unit corresponds to 6 dB
+	int additional_db = (int)(s_meter_db - (s_units * 6)); // Remaining 'dB' above S9
+
+	// Ensure non-negative values
+	if (s_units < 0)
+		s_units = 0;
+	if (additional_db < 0)
+		additional_db = 0;
+
+	// Cap additional S-units at 20+ for simplicity
+	if (s_units >= 9)
+	{
+		if (additional_db > 20)
+			additional_db = 20;
+	}
+
+	// Return the value formatted as "S-unit * 100 + additional dB"
+	return (s_units * 100) + additional_db;
+}
+
 int remote_audio_output(int16_t *samples){
 	int length = q_length(&qremote);
 	for (int i = 0; i < length; i++){
@@ -258,6 +306,8 @@ void set_lpf_40mhz(int frequency){
 		lpf = LPF_D;
 	else if (frequency < 10500000)		
 		lpf = LPF_C;
+	else if (frequency < 21500000 && sbitx_version >= 4)
+		lpf = LPF_B;
 	else if (frequency < 18500000)		
 		lpf = LPF_B;
 	else if (frequency < 30000000) 
@@ -278,6 +328,7 @@ void set_lpf_40mhz(int frequency){
   digitalWrite(LPF_B, LOW);
   digitalWrite(LPF_C, LOW);
   digitalWrite(LPF_D, LOW);
+  digitalWrite(LPF_E, LOW);
 
 #if DEBUG > 0
   printf("################ setting %d high\n", lpf);
@@ -295,7 +346,8 @@ void set_rx1(int frequency){
 		return;
 	radio_tune_to(frequency);
 	freq_hdr = frequency;
-	set_lpf_40mhz(frequency);
+	if (sbitx_version  < 4) 
+		set_lpf_40mhz(frequency);
 }
 
 void set_volume(double v){
@@ -555,7 +607,7 @@ void rx_linear(int32_t *input_rx,  int32_t *input_mic,
 	int i, j = 0;
 	double i_sample, q_sample;
 
-    rx_tick++;
+  rx_tick++;
 	//STEP 1: first add the previous M samples to
 	for (i = 0; i < MAX_BINS/2; i++)
 		fft_in[i]  = fft_m[i];
@@ -567,7 +619,7 @@ void rx_linear(int32_t *input_rx,  int32_t *input_mic,
 	int m = 0;
 	//gather the samples into a time domain array 
 	for (i= MAX_BINS/2; i < MAX_BINS; i++){
-		i_sample = (1.0  *input_rx[j])/200000000.0;
+		i_sample = (1.0  *input_rx[j])/20000000.0;
 		q_sample = 0;
 
 		j++;
@@ -677,6 +729,7 @@ void rx_linear(int32_t *input_rx,  int32_t *input_mic,
 
 	//push the data to any potential modem 
 	modem_rx(rx_list->mode, output_speaker, MAX_BINS/2);
+	//printf("S meter: %d\n", calculate_s_meter(r));
 }
 
 void read_power(){
@@ -693,7 +746,6 @@ void read_power(){
 
 	memcpy(&vfwd, response, 2);
 	memcpy(&vref, response+2, 2);
-//	printf("%d:%d\n", vfwd, vref);
 	if (vref >= vfwd)
 		vswr = 100;
 	else
@@ -726,6 +778,13 @@ void tx_process(
 {
 	int i;
 	double i_sample, q_sample, i_carrier;
+	
+  //uncomment this to test a simple audio loop of mic to speaker
+	//memcpy(output_speaker, input_mic, sizeof(int32_t) * n_samples);
+	//return;
+
+	if (pf_debug)
+		fwrite(input_mic, sizeof(int32_t), n_samples, pf_debug); 	
 
 	struct rx *r = tx_list;
 
@@ -750,7 +809,6 @@ void tx_process(
 	//double max = -10.0, min = 10.0;
 	//gather the samples into a time domain array 
 	for (i= MAX_BINS/2; i < MAX_BINS; i++){
-
 		if (r->mode == MODE_2TONE)
 			i_sample = (1.0 * (vfo_read(&tone_a) 
 										+ vfo_read(&tone_b) )) / 50000000000.0;
@@ -770,22 +828,15 @@ void tx_process(
 		}
 		else 
 	  		i_sample = (1.0 * input_mic[j]) / 2000000000.0;
-		
-		//clip the overdrive to prevent damage up the processing chain, PA
-		if (r->mode == MODE_USB || r->mode == MODE_LSB || r->mode == MODE_AM){
-			if (i_sample < (-1.0 * voice_clip_level))
-				i_sample = -1.0 * voice_clip_level;
-			else if (i_sample > voice_clip_level)
-				i_sample = voice_clip_level;
-		}
-
+	
 		//don't echo the voice modes
 		if (r->mode == MODE_USB || r->mode == MODE_LSB || r->mode == MODE_AM 
 			|| r->mode == MODE_NBFM)
 			output_speaker[j] = 0;
-		else
+		else  
 			output_speaker[j] = i_sample * sidetone;
-	  	q_sample = 0;
+		
+  	q_sample = 0;
 
 	  	j++;
 
@@ -854,14 +905,15 @@ void tx_process(
 	for (i= 0; i < MAX_BINS/2; i++){
 		double s = creal(r->fft_time[i+(MAX_BINS/2)]);
 		output_tx[i] = s * scale * tx_amp * alc_level;
-		if (min > output_tx[i])
+/*		if (min > output_tx[i])
 			min = output_tx[i];
 		if (max < output_tx[i])
-			max = output_tx[i];	
+			max = output_tx[i];	*/
 			//output_tx[i] = 0;
 	}
 
-	read_power();
+	if (sbitx_version < 4)
+		read_power();
 	sdr_modulation_update(output_tx, MAX_BINS/2, tx_amp);	
 }
 
@@ -874,7 +926,6 @@ void sound_process(
 	int32_t *output_speaker, int32_t *output_tx, 
 	int n_samples)
 {
-
 	if (in_tx)
 		tx_process(input_rx, input_mic, output_speaker, output_tx, n_samples);
 	else
@@ -964,6 +1015,8 @@ static int hw_settings_handler(void* user, const char* section,
 		bfo_freq = atoi(value);
 	if (!strcmp(name, "si570_xtal"))
 		si570_xtal = atoi(value);
+	if (!strcmp(name, "hw"))
+		sbitx_version = atoi(value);
 }
 
 static void read_hw_ini(){
@@ -1099,6 +1152,7 @@ void tx_cal(){
 
 void tr_switch_de(int tx_on){
 		if (tx_on){
+			digitalWrite(RX_LINE, LOW);
 			//mute it all and hang on for a millisecond
 			sound_mixer(audio_card, "Master", 0);			
 			sound_mixer(audio_card, "Capture", 0);
@@ -1107,7 +1161,7 @@ void tr_switch_de(int tx_on){
 			//now switch of the signal back
 			//now ramp up after 5 msecs
 			delay(2);
-			digitalWrite(TX_LINE, HIGH);
+//			digitalWrite(TX_LINE, HIGH);
 			mute_count = 20;
 			tx_process_restart = 1;
 			//give time for the reed relay to switch
@@ -1119,7 +1173,8 @@ void tr_switch_de(int tx_on){
 				set_lpf_40mhz(freq_hdr);
 				delay(10); //debounce the lpf relays
 			}
-			digitalWrite(TX_POWER, HIGH);
+			digitalWrite(TX_LINE, HIGH);
+
 			spectrum_reset();
 		}
 		else {
@@ -1132,7 +1187,6 @@ void tr_switch_de(int tx_on){
 			mute_count = MUTE_MAX;
 
 			//power down the PA chain to null any gain
-			digitalWrite(TX_POWER, LOW);
 			delay(2);
 
 			if (tr_relay){
@@ -1151,6 +1205,8 @@ void tr_switch_de(int tx_on){
 			sound_mixer(audio_card, "Capture", rx_gain);
 			spectrum_reset();
 			//rx_tx_ramp = 10;
+			delay(5);
+			digitalWrite(RX_LINE, HIGH);
 		}
 }
 
@@ -1212,11 +1268,82 @@ void tr_switch_v2(int tx_on){
 	}
 }
 
+//v4 t/r switch uses separate lines for RX and TX powering 
+void tr_switch_v4(int tx_on){
+	if (tx_on){
+
+		digitalWrite(RX_LINE, LOW);
+
+		//first turn off the LPFs, so PA doesnt connect 
+ 		digitalWrite(LPF_A, LOW);
+ 		digitalWrite(LPF_B, LOW);
+  	digitalWrite(LPF_C, LOW);
+ 		digitalWrite(LPF_D, LOW);
+  	digitalWrite(LPF_E, LOW);
+
+		//mute it all and hang on for a millisecond
+//		sound_mixer(audio_card, "Master", 0);	
+//		sound_mixer(audio_card, "Capture", 0);
+		delay(1);
+
+		//now switch of the signal back
+		//now ramp up after 5 msecs
+		delay(2);
+		mute_count = 20;
+		tx_process_restart = 1;
+     delay(20);
+		in_tx = 1;
+		set_tx_power_levels();
+		prev_lpf = -1; //force this
+		set_lpf_40mhz(freq_hdr);
+		delay(10);
+		spectrum_reset();
+		digitalWrite(TX_LINE, HIGH);
+	}
+	else {
+
+		in_tx = 0;
+		digitalWrite(TX_LINE, LOW);
+
+		//mute it all and hang on
+		sound_mixer(audio_card, "Master", 0);
+		sound_mixer(audio_card, "Capture", 0);
+		delay(1);
+    fft_reset_m_bins();
+		mute_count = MUTE_MAX;
+
+  	digitalWrite(LPF_A, LOW);
+  	digitalWrite(LPF_B, LOW);
+ 	 	digitalWrite(LPF_C, LOW);
+  	digitalWrite(LPF_D, LOW);
+  	digitalWrite(LPF_E, LOW);
+		prev_lpf = -1; //force the lpf to be re-energized
+		delay(10);
+		//power down the PA chain to null any gain
+		delay(5); 
+		//audio codec is back on
+		// Set a level for receiver volume - left channel
+		sound_mixer(audio_card, "Master",  rx_vol);			// Need to change - N3SB
+		sound_mixer(audio_card, "Capture", rx_gain);
+		spectrum_reset();
+		prev_lpf = -1;
+		//set_lpf_40mhz(freq_hdr);
+		//rx_tx_ramp = 10;
+		digitalWrite(RX_LINE, HIGH);
+	}
+}
+
 void tr_switch(int tx_on){
-	if (sbitx_version == SBITX_DE)
-		tr_switch_de(tx_on);
-	else
-		tr_switch_v2(tx_on);
+	switch(sbitx_version){
+		case SBITX_DE:
+			tr_switch_de(tx_on);
+			break;
+		case SBITX_V4:
+			tr_switch_v4(tx_on);
+			break;
+		default:
+			tr_switch_v2(tx_on);
+	}
 }
 
 /* 
@@ -1230,7 +1357,7 @@ void setup(char *audio_output_device){
 
 	//setup the LPF and the gpio pins
 	pinMode(TX_LINE, OUTPUT);
-	pinMode(TX_POWER, OUTPUT);
+	pinMode(RX_LINE, OUTPUT);
 	pinMode(LPF_A, OUTPUT);
 	pinMode(LPF_B, OUTPUT);
 	pinMode(LPF_C, OUTPUT);
@@ -1240,7 +1367,8 @@ void setup(char *audio_output_device){
   digitalWrite(LPF_C, LOW);
   digitalWrite(LPF_D, LOW);
 	digitalWrite(TX_LINE, LOW);
-	digitalWrite(TX_POWER, LOW);
+	digitalWrite(RX_LINE, HIGH);
+
 
 	fft_init();
 	vfo_init_phase_table();
@@ -1255,12 +1383,15 @@ void setup(char *audio_output_device){
   tx_list->tuned_bin = 512;
 	tx_init(7000000, MODE_LSB, -3000, -150);
 
-	//detect the version of sbitx
-	uint8_t response[4];
-	if(i2cbb_read_i2c_block_data(0x8, 0, 4, response) == -1)
-		sbitx_version = SBITX_DE;
-	else
-		sbitx_version = SBITX_V2;
+	//detect the version of sbitx if not read from hw_settings
+	if (sbitx_version == -1){
+		uint8_t response[4];
+		if(i2cbb_read_i2c_block_data(0x8, 0, 4, response) == -1)
+			sbitx_version = SBITX_DE;
+		else
+			sbitx_version = SBITX_V2;
+	}
+	printf("hw version: %d\n", sbitx_version);
 
 	setup_audio_codec();
  	sound_thread_start("plughw:0,0");	
@@ -1272,7 +1403,7 @@ void setup(char *audio_output_device){
 	vfo_start(&am_carrier, 24000, 0);
 
 	delay(2000);	
-//	pf_debug = fopen("am_test.raw", "w");	
+	//pf_debug = fopen("tx.raw", "w");
 }
 
 void sdr_request(char *request, char *response){
@@ -1298,6 +1429,9 @@ void sdr_request(char *request, char *response){
 		//printf("Frequency set to %d\n", freq_hdr);
 		strcpy(response, "ok");	
 	} 
+	else if (!strcmp(cmd, "smeter")){
+		sprintf(response, "%d", calculate_s_meter());	
+	}
 	else if (!strcmp(cmd, "r1:mode")){
 		if (!strcmp(value, "LSB"))
 			rx_list->mode = MODE_LSB;
@@ -1387,9 +1521,9 @@ void sdr_request(char *request, char *response){
 	}
 	else if (!strcmp(cmd, "tx")){
 		if (!strcmp(value, "on"))
-			tr_switch_v2(1);
+			tr_switch(1);
 		else
-			tr_switch_v2(0);
+			tr_switch(0);
 		strcpy(response, "ok");
 	}
 	else if (!strcmp(cmd, "rx_pitch")){

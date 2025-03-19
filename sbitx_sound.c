@@ -76,6 +76,7 @@ void sound_volume(char *card_name, char *element, int volume)
     snd_mixer_selem_id_t *sid;
 		char *card;
 
+		//printf("sound_volume %s, %s, %d\n", card_name, element, volume);
 		card = card_name;
     snd_mixer_open(&handle, 0);
     snd_mixer_attach(handle, card);
@@ -100,6 +101,7 @@ void sound_mixer(char *card_name, char *element, int make_on)
     snd_mixer_selem_id_t *sid;
     char *card = card_name;
 
+		//printf("sound_mixer %s, %s, %d\n", card_name, element, make_on);
     snd_mixer_open(&handle, 0);
     snd_mixer_attach(handle, card);
     snd_mixer_selem_register(handle, NULL, NULL);
@@ -775,7 +777,7 @@ int sound_loop(){
 			while (i < ret_card)
 			{
 				input_i[i] = data_in[j++]/2;
-				input_q[i] = data_in[j++]/2;
+				input_q[i] = (data_in[j++])/2;
 				i++;
 			}
 		}
