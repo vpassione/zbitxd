@@ -673,7 +673,7 @@ struct field main_controls[] = {
     "", 300, 3000, 50, 0},
   {"#bw_cw", NULL, 1000, -1000, 50, 50, "BW_CW", 40, "400", FIELD_NUMBER, FONT_FIELD_VALUE,
     "", 300, 3000, 50, 0},
-  {"#bw_digital", NULL, 1000, -1000, 50, 50, "BW_DIGITAL", 40, "3000", FIELD_NUMBER, FONT_FIELD_VALUE,
+  {"#bw_digital", NULL, 1000, -1000, 50, 50, "BW_DIGITAL", 40, "4000", FIELD_NUMBER, FONT_FIELD_VALUE,
     "", 300, 3000, 50, 0},
 
   {"#smeter", NULL, 1000, -1000, 50, 50, "SMETER", 40, "3000", FIELD_NUMBER, FONT_FIELD_VALUE,
@@ -809,6 +809,12 @@ int set_field(const char *id, const char *value){
 	struct field *f = get_field(id);
 	int v;
 	int debug = 0;
+
+/*
+	if (!strcmp(id, "#bw")){
+		printf("got bandwidth\n");
+	}
+*/
 
 	if (!f){
 		printf("*Error: field[%s] not found. Check for typo?\n", id);
@@ -1417,6 +1423,7 @@ static void save_user_settings(int forced){
 	int i;
 	for (i= 0; active_layout[i].cmd[0] > 0; i++){
 		fprintf(f, "%s=%s\n", active_layout[i].cmd, active_layout[i].value);
+		//printf("%s=%s\n", active_layout[i].cmd, active_layout[i].value);
 	}
 
 	//now save the band stack
@@ -2971,7 +2978,7 @@ int do_bandwidth(struct field *f, cairo_t *gfx, int event, int a, int b, int c){
 	return 0;
 }
 
-static char tune_tx_saved_mode[100];
+static char tune_tx_saved_mode[100]={0};
 int do_tune_tx(struct field *f, cairo_t *gfx, int event, int a, int b, int c){
 	if(event == FIELD_EDIT){
 		printf("tune_tx : %s\n", f->value);
@@ -4102,6 +4109,7 @@ static void zbitx_logs(){
 		return;
 	while(fgets(row, sizeof(row), pf)){
 		sprintf(row_response, "QSO %s}", row);
+		printf(row_response);
 		i2cbb_write_i2c_block_data(ZBITX_I2C_ADDRESS, '{', strlen(row_response), row_response);
 	}
 	fclose(pf);
@@ -4175,6 +4183,8 @@ void zbitx_poll(int all){
 		else{
 			if (!strncmp(buff, "OPEN", 4))
 				update_logs = 1;
+			if (isupper(buff[0]))
+				printf("remote exec: %s\n", buff);
 			remote_execute(buff);
 		}
 	}
@@ -4752,8 +4762,10 @@ void do_control_action(char *cmd){
 	else if(!strcmp(request, "TUNE OFF")){
 		puts("Turning off TUNE");
 		tx_off();
-		field_set("MODE", tune_tx_saved_mode);	
-		update_field(get_field("r1:mode"));
+		if (tune_tx_saved_mode[0]){
+			field_set("MODE", tune_tx_saved_mode);	
+			update_field(get_field("r1:mode"));
+		}
 	}
 	else if (!strcmp(request, "REC ON")){
 		char fullpath[200];	//dangerous, find the MAX_PATH and replace 200 with it
@@ -5179,23 +5191,22 @@ int main( int argc, char* argv[] ) {
 	tx_mod_index = 0;
 	init_waterfall();
 
+/*
 	//set the radio to some decent defaults
 	do_control_action("FREQ 7100000");
 	do_control_action("MODE LSB");	
 	do_control_action("STEP 1K");	
   do_control_action("SPAN 25K");
+*/
 
 	strcpy(vfo_a_mode, "USB");
 	strcpy(vfo_b_mode, "LSB");
-	strcpy(tune_tx_saved_mode, "USB");	
-	set_field("#mycallsign", "NOBODY");
-	//vfo_a_freq = 14000000;
-	//vfo_b_freq = 7000000;
 	
 	f = get_field("spectrum");
 	update_field(f);
 	set_volume(20000000);
 
+	set_field("#mycallsign", "NOBODY");
 	set_field("r1:freq", "7000000");
 	set_field("r1:mode", "USB");
 	set_field("tx_gain", "24");
@@ -5230,7 +5241,7 @@ int main( int argc, char* argv[] ) {
 	write_console(FONT_LOG, VER_STR);
   write_console(FONT_LOG, "\r\nEnter \\help for help\r\n");
 
-	if (strcmp(get_field("#mycallsign")->value, "NOBODY")){
+	if (strcmp(get_field("#mycallsign")->value, "NOBADY")){
 		sprintf(buff, "\nWelcome %s\nYour grid is %s\n", 
 		get_field("#mycallsign")->value, get_field("#mygrid")->value);
 		write_console(FONT_LOG, buff);
@@ -5242,7 +5253,8 @@ int main( int argc, char* argv[] ) {
 	set_field("#text_in", "");
 	field_set("REC", "OFF");
 	field_set("KBD", "OFF");
-	field_set("TUNE", "OFF");
+	if (!strcmp(field_str("TUNE"), "ON"))
+		field_set("TUNE", "OFF");
 
 	// you don't want to save the recently loaded settings
 	settings_updated = 0;
@@ -5252,6 +5264,7 @@ int main( int argc, char* argv[] ) {
 	rtc_read();
 	zbitx_init();
 
+	printf("BW_CW is %s\n", field_str("BW_CW"));
 	if (zbitx_available)
 		zbitx_poll(1); // send all the field values
 
