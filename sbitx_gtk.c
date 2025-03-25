@@ -545,11 +545,10 @@ struct field main_controls[] = {
 	{"#split", NULL, 680, 50, 40, 40, "SPLIT", 40, "OFF", FIELD_TOGGLE, FONT_FIELD_VALUE, 
 		"ON/OFF", 0,0,0,COMMON_CONTROL},
 
-	{ "#bw", do_bandwidth, 495, 5, 40, 40, "BW", 40, "", FIELD_NUMBER, FONT_FIELD_VALUE, 
-		"", 50, 5000, 50,COMMON_CONTROL},
-
 	{ "r1:mode", NULL, 5, 5, 40, 40, "MODE", 40, "USB", FIELD_SELECTION, FONT_FIELD_VALUE, 
 		"USB/LSB/CW/CWR/FT8/AM/DIGI/2TONE", 0,0,0, COMMON_CONTROL},
+	{ "#bw", do_bandwidth, 495, 5, 40, 40, "BW", 40, "", FIELD_NUMBER, FONT_FIELD_VALUE, 
+		"", 50, 5000, 50,COMMON_CONTROL},
 
 	/* logger controls */
 
@@ -675,7 +674,7 @@ struct field main_controls[] = {
   {"#bw_cw", NULL, 1000, -1000, 50, 50, "BW_CW", 40, "400", FIELD_NUMBER, FONT_FIELD_VALUE,
     "", 300, 3000, 50, 0},
   {"#bw_digital", NULL, 1000, -1000, 50, 50, "BW_DIGITAL", 40, "4000", FIELD_NUMBER, FONT_FIELD_VALUE,
-    "", 300, 3000, 50, 0},
+    "", 300, 5000, 50, 0},
 
   {"#smeter", NULL, 1000, -1000, 50, 50, "SMETER", 40, "3000", FIELD_NUMBER, FONT_FIELD_VALUE,
     "", 300, 3000, 50, 0},
@@ -3994,7 +3993,7 @@ void set_radio_mode(char *mode){
 	char umode[10], request[100], response[100];
 	int i;
 
-	// printf("Mode: %s\n", mode);		// N3SB Hack - reducing clutter on the console
+	printf("set_radio_mode Mode: %s\n", mode);		// N3SB Hack - reducing clutter on the console
 	for (i = 0; i < sizeof(umode) - 1 && *mode; i++)
 		umode[i] = toupper(*mode++);
 	umode[i] = 0;
@@ -4005,7 +4004,7 @@ void set_radio_mode(char *mode){
 		printf("mode %d: unavailable\n", umode);
 		return;
 	}
-	int new_bandwidth = 3000;
+	int new_bandwidth = 3001;
 	switch(mode_id(umode)){
 		case MODE_CW:
 		case MODE_CWR:
@@ -4023,14 +4022,15 @@ void set_radio_mode(char *mode){
 			new_bandwidth = field_int("BW_DIGITAL");
 	}
 	layout_ui();
+	struct field *f = get_field_by_label("MODE");
+	if (strcmp(f->value, umode))
+		field_set("MODE", umode);
 	//let the bw control trigger the filter
 	char bw_str[10];
 	sprintf(bw_str, "%d", new_bandwidth);
 	field_set("BW", bw_str);
+	printf("changing %s bw to %s\n", umode, bw_str);
 
-	struct field *f = get_field_by_label("MODE");
-	if (strcmp(f->value, umode))
-		field_set("MODE", umode);
 }
 
 void zbitx_write(int style, char *text){
@@ -4138,9 +4138,8 @@ void zbitx_poll(int all){
 		struct field *f = active_layout+i;
 		if (!strcmp(f->label, "WATERFALL") || !strcmp(f->label, "SPECTRUM"))
 			continue;
-		if (all || /* f->update_remote */ f->updated_at >  last_update){
+		if (all || f->updated_at >  last_update){
 			sprintf(buff, "%s %s}", f->label, f->value);
-		
 			retry = 3;
 			do {
 				e = i2cbb_write_i2c_block_data(ZBITX_I2C_ADDRESS, '{', strlen(buff), buff);
@@ -4206,8 +4205,10 @@ void zbitx_poll(int all){
 			printf("FT8 processing from zbitx\n");
 		}
 		else{
-			if (!strncmp(buff, "OPEN", 4))
+			if (!strncmp(buff, "OPEN", 4)){
 				update_logs = 1;
+				printf("<<<< refresh the log >>>>>\n");
+			}
 			remote_execute(buff);
 		}
 	}
@@ -4258,7 +4259,7 @@ gboolean ui_tick(gpointer gook){
 		if (!strncmp(remote_cmd, "key ", 4))
 			for (int i = 4; remote_cmd[i] > 0; i++)
 				edit_field(get_field("#text_in"), remote_cmd[i]);	
-		else {
+		else if (strlen(remote_cmd)){
 			cmd_exec(remote_cmd);
 			settings_updated = 1; //save the settings
 		}
