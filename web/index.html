@@ -63,8 +63,6 @@
 				<option value="CW">CW</option>
 				<option value="CWR">CWR</option>
 				<option value="FT8">FT8</option>
-				<option value="PSK31">PSK31</option>
-				<option value="RTTY">RTTY</option>
 				<option value="DIGITAL">DIGITAL</option> 
 				<option value="2TONE">2TONE</option>
 			</select>
@@ -447,11 +445,11 @@
 		><button class="sbitxv3-btn macro-btn" id="F9">F9</button
 		><button class="sbitxv3-btn macro-btn" id="F10">F10</button>
 		<button class="sbitxv3-btn" id="console-open">CMD</button
-		><button class="sbitxv3-btn" id="telnet-open">TEL</button
-		><button class="sbitxv3-btn" id="recorder-open">REC</button
+		><!--<button class="sbitxv3-btn" id="telnet-open">TEL</button
+		>--><button class="sbitxv3-btn" id="recorder-open">REC</button
 		><button class="sbitxv3-btn" id="settings-open">SET</button>
 		<input type="text" class="sbitx-text-input sbitx-text-field" 
-			id="TEXT" placeholder="TEXT\CMD" size="20" />
+			id="TEXT" placeholder="TEXT" size="20" />
 		</div><!-- end of more_keys -->
 		<!--- removed the keyboard from the html, use the device's own virtual/physical keyboard 
 		<table id="keybd" class="sbitx-keystroke" width="100%">
@@ -1745,6 +1743,7 @@ function telnet_update(text){
 }
 
 function show_telnet_panel(){
+	return; // temporarily disabled
 	open_panel("telnet_panel");
 }
 
