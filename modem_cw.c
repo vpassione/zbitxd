@@ -15,10 +15,9 @@
 	The modem_poll is called about 10 to 20 times a second from 
 	the 'user interface' thread.
 
-	The key is physically read from the GPIO by calling key_poll() through
-	modem_poll and the value is stored as cw_key_state.
-
-	The cw_get_sample just reads this cw_key_state instead of polling the GPIO.
+	The key is physically read from the GPIO by calling key_poll()
+	the key_poll stores the values read from the ISR of the PTT(DOT) and DASH
+	gpio lines
 
 	the cw_read_key() routine returns the next dash/dot/space/, etc to be sent
 	the word 'symbol' is used to denote a dot, dash, a gaps that are dot, dash or
@@ -260,7 +259,6 @@ struct cw_decoder decoder;
 /* cw tx state variables */
 static unsigned long millis_now = 0;
 
-static int cw_key_state = 0;
 static int cw_period;
 static struct vfo cw_tone, cw_env;
 static int keydown_count=0;			//counts down pause afer a keydown is finished
@@ -313,6 +311,8 @@ static uint8_t cw_get_next_symbol(){
 
 static int cw_read_key(){
 	char c;
+
+	int cw_key_state = key_poll();
 
 	//preferance to the keyer activity
 	if (cw_key_state != CW_IDLE) {
@@ -748,7 +748,6 @@ void cw_init(){
 
 void cw_poll(int bytes_available, int tx_is_on){
 	cw_bytes_available = bytes_available;
-	cw_key_state = key_poll();
 	int wpm  = field_int("WPM");
 	cw_period = (12 * 9600)/wpm;
 
@@ -766,7 +765,7 @@ void cw_poll(int bytes_available, int tx_is_on){
 	// TX ON if bytes are avaiable (from macro/keyboard) or key is pressed
 	// of we are in the middle of symbol (dah/dit) transmission 
 	
-	if (!tx_is_on && (cw_bytes_available || cw_key_state || (symbol_next && *symbol_next)) > 0){
+	if (!tx_is_on && (cw_bytes_available || key_poll() || (symbol_next && *symbol_next)) > 0){
 		tx_on(TX_SOFT);
 		millis_now = millis();
 		cw_tx_until = get_cw_delay() + millis_now;

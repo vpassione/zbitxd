@@ -177,6 +177,11 @@ struct font_style font_table[] = {
 
 struct encoder enc_a, enc_b;
 
+//keyer polling variables
+//the PTT and DASH lines are pulled high
+int ptt_state = HIGH, dash_state = HIGH;
+struct field *cw_input = NULL;
+
 #define MAX_FIELD_LENGTH 128
 
 #define FIELD_NUMBER 0
@@ -3661,19 +3666,43 @@ void init_gpio_pins(){
 
 int key_poll(){
 	int key = CW_IDLE;
-	int input_method = get_cw_input_method();
+	//int input_method = get_cw_input_method();
+	if (cw_input == NULL){
+		printf("cw_input field must point to the CW_INPUT field\n");
+		return 0;
+	}
+
+	//quick look up of one of the three values of keying type
+	//STRAIG[H]T
+	//IAMBIC[\0]
+	//IAMBIC[B]
+
+	int input_method = CW_IAMBIC; 
+	switch(cw_input->value[6]){
+		case 0:
+			input_method = CW_IAMBIC;
+			break;
+		case 'H':
+			input_method = CW_STRAIGHT;
+			break;
+		case 'B':
+			input_method = CW_IAMBICB;
+			break;
+	}
+	
 
 	if (input_method == CW_IAMBIC || input_method == CW_IAMBICB){	
-		if (digitalRead(PTT) == LOW)
+		if (ptt_state == LOW)
+		//if (digitalRead(PTT) == LOW)
 			key |= CW_DASH;
-		if (digitalRead(DASH) == LOW)
+		if (dash_state == LOW)
+		//if (digitalRead(DASH) == LOW)
 			key |= CW_DOT;
 	}
 	//straight key
-	else if (digitalRead(PTT) == LOW || digitalRead(DASH) == LOW)
+	else if (ptt_state == LOW || dash_state == LOW)
 			key = CW_DOWN;
 
-	//printf("key %d\n", key);
 	return key;
 }
 
@@ -3736,6 +3765,11 @@ void tuning_isr(void){
 		tuning_ticks--;	
 }
 
+void key_isr(void){
+	dash_state = digitalRead(DASH);
+	ptt_state = digitalRead(PTT);
+}
+
 void query_swr(){
 	uint8_t response[4];
 	int16_t vfwd, vref;
@@ -3772,6 +3806,8 @@ void hw_init(){
 
 	wiringPiISR(ENC2_A, INT_EDGE_BOTH, tuning_isr);
 	wiringPiISR(ENC2_B, INT_EDGE_BOTH, tuning_isr);
+	wiringPiISR(PTT, INT_EDGE_BOTH, key_isr);
+	wiringPiISR(DASH, INT_EDGE_BOTH, key_isr);
 }
 
 void hamlib_tx(int tx_input){
@@ -4323,9 +4359,9 @@ gboolean ui_tick(gpointer gook){
 	//straight key in CW
 	if (f && (!strcmp(f->value, "2TONE") || !strcmp(f->value, "LSB") 
 	|| !strcmp(f->value, "AM") || !strcmp(f->value, "USB"))){
-		if (digitalRead(PTT) == LOW && in_tx == 0)
+		if (ptt_state == LOW && in_tx == 0)
 			tx_on(TX_PTT);
-		else if (digitalRead(PTT) == HIGH && in_tx  == TX_PTT)
+		else if (ptt_state == HIGH && in_tx  == TX_PTT)
 			tx_off();
 	}
 
@@ -5126,7 +5162,6 @@ int main( int argc, char* argv[] ) {
 	f = active_layout;
 	field_init();		
 
-
 	hd_createGridList();
 	
 	//initialize the modulation display
@@ -5199,10 +5234,11 @@ int main( int argc, char* argv[] ) {
   hamlib_start();
 	remote_start();
 
+	//we cache the CW_INPUT fiel for fast lookup
+	cw_input = get_field_by_label("CW_INPUT");
 	rtc_read();
 	zbitx_init();
 
-	printf("BW_CW is %s\n", field_str("BW_CW"));
 	if (zbitx_available)
 		zbitx_poll(1); // send all the field values
 
