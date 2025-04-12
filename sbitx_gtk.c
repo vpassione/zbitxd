@@ -3959,7 +3959,6 @@ void set_radio_mode(char *mode){
 	char umode[10], request[100], response[100];
 	int i;
 
-	printf("set_radio_mode Mode: %s\n", mode);		// N3SB Hack - reducing clutter on the console
 	for (i = 0; i < sizeof(umode) - 1 && *mode; i++)
 		umode[i] = toupper(*mode++);
 	umode[i] = 0;
@@ -3995,7 +3994,6 @@ void set_radio_mode(char *mode){
 	char bw_str[10];
 	sprintf(bw_str, "%d", new_bandwidth);
 	field_set("BW", bw_str);
-	printf("changing %s bw to %s\n", umode, bw_str);
 
 }
 

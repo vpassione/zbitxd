@@ -819,22 +819,32 @@ void tx_process(
 		else if (r->mode == MODE_CW || r->mode == MODE_CWR || r->mode == MODE_FT8)
 			i_sample = modem_next_sample(r->mode) / 3;
 		else if (r->mode == MODE_AM){
-			//double modulation = (1.0 * vfo_read(&tone_a)) / 1073741824.0;
-	  		double modulation = (1.0 * input_mic[j]) / 200000000.0;
+	  	double modulation = (1.0 * input_mic[j]) / 200000000.0;
 			if (modulation < -1.0)
 				modulation = -1.0;
 			i_carrier= (1.0  * vfo_read(&am_carrier))/ 50000000000.0 ; 
 	  		i_sample =  (1.0 + modulation) * i_carrier;
 		}
 		else 
-	  		i_sample = (1.0 * input_mic[j]) / 2000000000.0;
+	  		i_sample = (1.0 * input_mic[j]) /2000000000.0;
 	
 		//don't echo the voice modes
-		if (r->mode == MODE_USB || r->mode == MODE_LSB || r->mode == MODE_AM 
-			|| r->mode == MODE_NBFM)
-			output_speaker[j] = 0;
-		else  
-			output_speaker[j] = input_mic[j]/1000 * sidetone;
+		switch(r->mode){
+			case MODE_USB:
+			case MODE_LSB:
+			case MODE_AM:
+			case MODE_NBFM:
+				output_speaker[j] = 0;
+				break;
+			case MODE_CW:
+			case MODE_CWR:
+			case MODE_FT8:
+				output_speaker[j] = (int)(i_sample * 20000000.0) * sidetone;
+				break;
+			case MODE_DIGITAL:
+				output_speaker[j] = input_mic[j]/1000 * sidetone;
+				break;
+		}
 		
   	q_sample = 0;
 
