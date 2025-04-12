@@ -95,7 +95,7 @@ int check_cmd(char *cmd, char *token){
 
 void send_response(char *response){
   send(data_socket, response, strlen(response), 0);
-	printf(" %s]\n", response); 
+	//printf(" %s]\n", response); 
 }
 
 int in_tx = 0;
@@ -120,7 +120,6 @@ void hamlib_set_freq(char *f){
 	
 
 void tx_control(int s){
-	//printf("tx_control(%d)\n", s);
   if (s == 1){
     in_tx = 1;
     hamlib_tx(in_tx);
@@ -138,7 +137,7 @@ void tx_control(int s){
 }
 
 void interpret_command(char *cmd){
- 
+
   if (check_cmd(cmd, "\\chk_vfo"))
     send_response("CHKVFO 1\n"); 
   else if (check_cmd(cmd, "\\dump_state"))
@@ -227,7 +226,7 @@ void hamlib_slice(){
     e = accept(welcome_socket, (struct sockaddr *) &server_storage, &addr_size);
     if (e == -1)
       return;
-    puts("Accepted connection\n");
+    puts("Hamlib connected\n");
     incoming_ptr = 0;
     data_socket = e;
     fcntl(data_socket, F_SETFL, fcntl(data_socket, F_GETFL) | O_NONBLOCK);

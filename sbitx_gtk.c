@@ -181,6 +181,9 @@ struct encoder enc_a, enc_b;
 //the PTT and DASH lines are pulled high
 int ptt_state = HIGH, dash_state = HIGH;
 struct field *cw_input = NULL;
+struct field *f_mode = NULL;
+struct field *f_text_in = NULL;
+struct field *f_pitch = NULL;
 
 #define MAX_FIELD_LENGTH 128
 
@@ -1347,6 +1350,29 @@ void draw_field(GtkWidget *widget, cairo_t *gfx, struct field *f){
 }
 
 static int mode_id(const char *mode_str){
+	if (mode_str[0] == 'C' && mode_str[1] == 'W' && mode_str[2] == 0)
+		return MODE_CW;
+	else if (mode_str[0] == 'C' && mode_str[1] == 'W' && mode_str[2] == 'R' && mode_str[3] == 0)
+		return MODE_CWR;
+	else if (mode_str[0] == 'U' && mode_str[1] == 'S' && mode_str[2] == 'B' && mode_str[3] == 0)
+		return MODE_USB;
+	else if (mode_str[0] == 'L' && mode_str[1] == 'S' && mode_str[2] == 'B' && mode_str[3] == 0)
+		return MODE_LSB;
+	else if (mode_str[0] == 'F' && mode_str[1] == 'T' && mode_str[2] == '8' && mode_str[3] == 0)
+		return MODE_FT8;
+	else if (mode_str[0] == 'N' && mode_str[1] == 'B' && mode_str[2] == 'F' && mode_str[3] == 'M')
+		return MODE_NBFM;
+	else if (mode_str[0] == 'A' && mode_str[1] == 'M' && mode_str[2] == '0')
+		return MODE_AM;
+	else if (mode_str[0] == '2' && mode_str[1] == 'T' && mode_str[2] == 'O' && mode_str[3] == 'N')
+		return MODE_2TONE;
+	else if (mode_str[0] == 'D' && mode_str[1] == 'I' && mode_str[2] == 'G' && mode_str[3] == 'I')
+		return MODE_DIGITAL;
+	return -1;
+}
+
+/*
+static int mode_id(const char *mode_str){
 	if (!strcmp(mode_str, "CW"))
 		return MODE_CW;
 	else if (!strcmp(mode_str, "CWR"))
@@ -1363,10 +1389,11 @@ static int mode_id(const char *mode_str){
 		return MODE_AM;
 	else if (!strcmp(mode_str, "2TONE"))
 		return MODE_2TONE;
-	else if (!strcmp(mode_str, "DIGITAL"))
+	else if (!strcmp(mode_str, "DIGI"))
 		return MODE_DIGITAL;
 	return -1;
 }
+*/
 
 static char *mode_name(int mode_id, char *name){
 	
@@ -1386,7 +1413,7 @@ static char *mode_name(int mode_id, char *name){
 		case MODE_FT8:
 			return strcpy(name, "FT8");
 		case MODE_DIGITAL:
-			return strcpy(name, "DIGITAL");
+			return strcpy(name, "DIGI");
 		case MODE_2TONE:
 			return strcpy(name, "2TONE");
 		case MODE_TUNE:
@@ -2784,8 +2811,9 @@ void set_filter_high_low(int hz){
 	if (hz < 50)
 		return;
 
-	struct field *f_mode = get_field("r1:mode");
-	struct field *f_pitch = get_field("rx_pitch");
+	f_mode = get_field("r1:mode");
+	f_text_in = get_field("text_in");
+	f_pitch = get_field("rx_pitch");
 
 	switch(mode_id(f_mode->value)){
 		case MODE_CW:
@@ -4221,19 +4249,19 @@ gboolean ui_tick(gpointer gook){
 		}
 	}
 
-		for (struct field *f = active_layout; f->cmd[0] > 0; f++){
-			if (f->is_dirty){
-				if (f->y >= 0){
-					GdkRectangle r;
-					r.x = f->x;
-					r.y = f->y;
-					r.width = f->width;
-					r.height = f->height;
-					invalidate_rect(r.x, r.y, r.width, r.height);
-				}
+	//the Gtk invalidations can only be done from this thread, so..
+	for (struct field *f = active_layout; f->cmd[0] > 0; f++){
+		if (f->is_dirty){
+			if (f->y >= 0){
+				GdkRectangle r;
+				r.x = f->x;
+				r.y = f->y;
+				r.width = f->width;
+				r.height = f->height;
+				invalidate_rect(r.x, r.y, r.width, r.height);
 			}
 		}
-  //char message[100];
+	}
 	
 	// check the tuning knob
 	struct field *f = get_field("r1:freq");
@@ -4254,12 +4282,18 @@ gboolean ui_tick(gpointer gook){
 	}
 
 
+	//the modem tick is called on every tick
+	//each modem has to optimize for efficient operation
+
+ 	modem_poll(mode_id(f_mode->value), ticks);
+
+/*
 	if (ticks % 20 == 0){
-  	modem_poll(mode_id(get_field("r1:mode")->value));
 	}
+*/
 
 	int tick_count = 50;
-	switch(mode_id(field_str("MODE"))){
+	switch(mode_id(f_mode->value)){
 		case MODE_CW:
 		case MODE_CWR:
 			tick_count = 50;
@@ -4355,10 +4389,9 @@ gboolean ui_tick(gpointer gook){
 	save_user_settings(0);
 
  
-	f = get_field("r1:mode");
 	//straight key in CW
-	if (f && (!strcmp(f->value, "2TONE") || !strcmp(f->value, "LSB") 
-	|| !strcmp(f->value, "AM") || !strcmp(f->value, "USB"))){
+	if (f && (!strcmp(f_mode->value, "2TONE") || !strcmp(f_mode->value, "LSB") 
+	|| !strcmp(f_mode->value, "AM") || !strcmp(f_mode->value, "USB"))){
 		if (ptt_state == LOW && in_tx == 0)
 			tx_on(TX_PTT);
 		else if (ptt_state == HIGH && in_tx  == TX_PTT)
@@ -5142,6 +5175,11 @@ int main( int argc, char* argv[] ) {
 	unlink("/home/pi/sbitx/ft8tx_float.raw");
 	call_wipe();
 	
+	//we cache some fields for fast lookup
+	cw_input = get_field_by_label("CW_INPUT");
+	f_mode = get_field_by_label("MODE");
+	f_pitch= get_field_by_label("PITCH");
+	f_text_in = get_field_by_label("TEXT");
 	ui_init(argc, argv);
 	hw_init();
 	console_init();
@@ -5234,8 +5272,6 @@ int main( int argc, char* argv[] ) {
   hamlib_start();
 	remote_start();
 
-	//we cache the CW_INPUT fiel for fast lookup
-	cw_input = get_field_by_label("CW_INPUT");
 	rtc_read();
 	zbitx_init();
 

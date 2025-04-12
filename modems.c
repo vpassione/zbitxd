@@ -424,13 +424,12 @@ void modem_init(){
 //each mode has its peculiarities, like the ft8 will start only on 15th second boundary
 //psk31 will transmit a few spaces after the last character, etc.
 
-void modem_poll(int mode){
+void modem_poll(int mode, int ticks){
 	int tx_is_on = is_in_tx();
 	time_t t;
 	char buffer[10000];
 
 	millis_now = millis();
-	int bytes_available = get_tx_data_length();
 
 	if (current_mode != mode){
 		//flush out the past decodes
@@ -458,12 +457,16 @@ void modem_poll(int mode){
 
 	switch(mode){
 	case MODE_FT8:
+		if (ticks % 20)
 		t = time_sbitx();
 		ft8_poll(t % 60, tx_is_on);
 	break;
 	case MODE_CW:
 	case MODE_CWR:	
-		cw_poll(bytes_available, tx_is_on);
+		{
+			int bytes_available = get_tx_data_length();
+			cw_poll(bytes_available, tx_is_on);
+		}
 	break;
 	}
 }
