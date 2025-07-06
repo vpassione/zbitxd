@@ -468,7 +468,7 @@ int	data_delay = 700;
 
 int spectrum_span = 48000;
 extern int spectrum_plot[];
-extern int fwdpower, vswr;
+extern int fwdpower, vswr, sbitx_version, sbitx_versionn;
 
 void do_control_action(char *cmd);
 void cmd_exec(char *cmd);
@@ -2217,14 +2217,14 @@ void draw_dial(struct field *f, cairo_t *gfx){
 			strcpy(temp_str, vfo_b->value);
       sprintf(buff, "TX:%s", freq_with_separators(temp_str));
       draw_text(gfx, f->x+5 , f->y+1 , buff , FONT_LARGE_FIELD);
-      sprintf(buff, "RX:%s", freq_with_separators(f->value));
+      sprintf(buff, "RX:%s", freq_with_separators(vfo_a->value));
       draw_text(gfx, f->x+5 , f->y+15 , buff , FONT_LARGE_VALUE);
     }
     else {
 			strcpy(temp_str, vfo_b->value);
       sprintf(buff, "TX:%s", freq_with_separators(temp_str));
       draw_text(gfx, f->x+5 , f->y+15 , buff , FONT_LARGE_VALUE);
-      sprintf(buff, "RX:%d", atoi(f->value) + atoi(rit_delta->value));
+      sprintf(buff, "RX:%d", atoi(vfo_a->value) + atoi(rit_delta->value));
       draw_text(gfx, f->x+5 , f->y+1 , buff , FONT_LARGE_FIELD);
     }
   }
@@ -2667,7 +2667,7 @@ void set_operating_freq(int dial_freq, char *response){
 		if (!in_tx)
 			sprintf(freq_request, "r1:freq=%s", vfo_a->value);	// was vfo_b->value
 		else
-			sprintf(freq_request, "r1:freq=%d", dial_freq);
+			sprintf(freq_request, "r1:freq=%s", vfo_b->value);
 	}
 	else
 	{
@@ -3095,7 +3095,6 @@ int do_tuning(struct field *f, cairo_t *gfx, int event, int a, int b, int c){
 					char tempstr[100];
 					sprintf(tempstr, "%d", rit_delta);
 					set_field("#rit_delta", tempstr);
-					printf("moved rit to %s\n", f->value);
 				}
 				else
 					return 1;
@@ -3311,6 +3310,12 @@ int do_record(struct field *f, cairo_t *gfx, int event, int a, int b, int c){
 
 void tx_on(int trigger){
 	char response[100];
+	struct field *f_batt = get_field("#batt");
+	
+	if (atoi(f_batt->value) > 900 && sbitx_version == 4){
+		write_console(FONT_LOG, "Reduce the power supply voltage to transmit\n");
+		return;
+	}
 
 	if (trigger != TX_SOFT && trigger != TX_PTT){
 		puts("Error: tx_on trigger should be SOFT or PTT");
@@ -3341,11 +3346,11 @@ void tx_on(int trigger){
 	}
 
 	if (in_tx == 0){
-		sdr_request("tx=on", response);	
-		in_tx = trigger; //can be PTT or softswitch
 		char response[20];
+		in_tx = trigger; //can be PTT or softswitch
 		struct field *freq = get_field("r1:freq");
 		set_operating_freq(atoi(freq->value), response);
+		sdr_request("tx=on", response);	
 		update_field(get_field("r1:freq"));
 		//printf("TX\n");
 		//tlog("tx_on", freq->value, trigger);
@@ -4091,6 +4096,7 @@ static void zbitx_logs(){
 void zbitx_poll(int all){
 	char buff[3000];
 	static unsigned int last_update = 0;
+	static int wf_update = 1;
 
 	int count = 0;
 	int e = 0;
@@ -4136,18 +4142,17 @@ void zbitx_poll(int all){
 			strlen(remote_cmd), remote_cmd);
 	}
 
-
-	zbitx_get_spectrum(buff);
-	strcat(buff, "}"); //terminate the block
-	//spectrum can be lost mometarily, it is alright	
-	delay(1);
-	i2cbb_write_i2c_block_data(0x0a, '{', strlen(buff), buff);
-
+	if (wf_update){
+		zbitx_get_spectrum(buff);
+		strcat(buff, "}"); //terminate the block
+		//spectrum can be lost mometarily, it is alright	
+		delay(1);
+		i2cbb_write_i2c_block_data(0x0a, '{', strlen(buff), buff);
+	}
 	//transmit in_tx
 	sprintf(buff, "IN_TX %d}", in_tx);
 	delay(1);
 	i2cbb_write_i2c_block_data(0x0a, '{', strlen(buff), buff);
-
 
 	if(update_logs){
 		zbitx_logs();
@@ -4167,6 +4172,10 @@ void zbitx_poll(int all){
 			remote_execute(ft8_message);
 			printf("FT8 processing from zbitx\n");
 		}
+		else if (!strcmp(buff, "WF ON"))
+			wf_update = 1;
+		else if (!strcmp(buff, "WF OFF"))
+			wf_update = 0;
 		else{
 			if (!strncmp(buff, "OPEN", 4)){
 				update_logs = 1;
@@ -4983,8 +4992,9 @@ void cmd_exec(char *cmd){
 		logbook_delete(atoi(args));
 		update_logs = 1;
 	}
-	else if (!strcmp(exec, "power"))
+	else if (!strcmp(exec, "power")){
 		set_field("#fwdpower", args);
+	}
 	else if (!strcmp(exec, "vswr") && in_tx)
 		set_field("#vswr", args);
 	else if (!strcmp(exec, "vbatt"))
@@ -5048,7 +5058,8 @@ void cmd_exec(char *cmd){
 		write_console(FONT_LOG, get_field("#sent_exchange")->value);
 		write_console(FONT_LOG, "]\n");
 	}
-	else if(!strcmp(exec, "freq") || !strcmp(exec, "f")){
+	else if(!strcmp(exec, "freq") || !strcmp(exec, "f") ||
+		!strcmp(exec, "FREQ")){
 		long freq = atol(args);
 		if (freq == 0){
 			write_console(FONT_LOG, "Usage: \f xxxxx (in Hz or KHz)\n");
@@ -5056,7 +5067,21 @@ void cmd_exec(char *cmd){
 		else if (freq < 30000)
 			freq *= 1000;
 
-		if (freq > 0){
+
+		struct field *f_rit = get_field_by_label("RIT");
+		if (!strcmp(f_rit->value, "ON")){
+			struct field *f_freq = get_field_by_label("FREQ");
+			struct field *f_rit = get_field_by_label("RIT");
+			struct field *f_rit_delta = get_field_by_label("RIT_DELTA");
+			unsigned int rx_freq = atoi(f_freq->value) + atoi(f_rit_delta->value);
+			int rit_delta = freq - rx_freq;
+
+			char s_rit_delta[30];
+			sprintf(s_rit_delta, "%d", rit_delta);
+			set_field("#rit_delta", s_rit_delta);
+			update_field(get_field_by_label("FREQ"));
+		}
+		else if (freq > 0){
 			char freq_s[20];
 			sprintf(freq_s, "%ld",freq);
 			set_field("r1:freq", freq_s);

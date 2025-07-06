@@ -137,6 +137,7 @@ struct power_settings band_power[] ={
 struct Queue qremote;
 
 void radio_tune_to(u_int32_t f){
+	printf("radio_tune_t %d\n", f);
 	if (rx_list->mode == MODE_CW)
   	si5351bx_setfreq(2, f + bfo_freq - 24000 + TUNING_SHIFT - rx_pitch);
 	else if (rx_list->mode == MODE_CWR)
@@ -330,6 +331,7 @@ void set_lpf_40mhz(int frequency){
   digitalWrite(LPF_D, LOW);
   digitalWrite(LPF_E, LOW);
 
+	printf("lpf for %d chosen %d\n", frequency, lpf);
 #if DEBUG > 0
   printf("################ setting %d high\n", lpf);
 #endif 
@@ -1061,7 +1063,7 @@ void set_tx_power_levels(){
 			tx_amp = (1.0 * tx_drive * band_power[i].scale);  
 		}	
 	}
-//	printf("tx_amp is set to %g for %d drive\n", tx_amp, tx_drive);
+	printf("tx_amp is set to %g for %d drive\n", tx_amp, tx_drive);
 	//we keep the audio card output 'volume' constant'
 // Set a level for transmitting - right channel
 	sound_mixer(audio_card, "Master", 95);
