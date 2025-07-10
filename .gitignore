@@ -1,3 +1,9 @@
 data/hw_settings.ini
 data/user_settings.ini
+data/sbitx.db
+data/*.wis
+web/grids.txt
+unused/
+*.o
+build.log
 sbitx
