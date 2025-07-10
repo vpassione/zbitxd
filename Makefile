@@ -4,6 +4,11 @@ OBJECTS = $(SOURCES:.c=.o)
 HEADERS = $(wildcard *.h)
 CFLAGS = -I.
 LIBS = -lwiringPi -lasound -lm -lfftw3 -lfftw3f -pthread -lncurses -lsqlite3 ft8_lib/libft8.a
+ifdef SBITX_UNUSED
+## remove and print unused code
+CFLAGS += -ffunction-sections -fdata-sections
+LIBS += -Wl,--gc-sections,--print-gc-sections
+endif
 ifdef SBITX_DEBUG
 CFLAGS += -ggdb3 -fsanitize=address
 LIBS += -fsanitize=address

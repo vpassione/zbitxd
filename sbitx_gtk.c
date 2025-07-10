@@ -40,7 +40,6 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include "i2cbb.h"
 #include "webserver.h"
 #include "logbook.h"
-#include "oled.h"
 #include "hist_disp.h"
 #include "ntputil.h"
 
@@ -77,11 +76,6 @@ char pins[15] = {0, 2, 3, 6, 7,
 //time sync, when the NTP time is not synced, this tracks the number of seconds 
 //between the system cloc and the actual time set by \utc command
 
-//mouse/touch screen state
-static int mouse_down = 0;
-static int last_mouse_x = -1;
-static int last_mouse_y = -1;
-
 //encoder state
 struct encoder {
 	int pin_a,  pin_b;
@@ -109,31 +103,6 @@ void tuning_isr(void);
 #define COLOR_FIELD_SELECTED 15 
 #define COLOR_TX_PITCH 16
 
-float palette[][3] = {
-	{1,1,1}, 		// COLOR_SELECTED_TEXT
-	{0,1,1},		// COLOR_TEXT
-	{0.5,0.5,0.5}, //COLOR_TEXT_MUTED
-	{1,1,0},		// COLOR_SELECTED_BOX
-	{0,0,0},		// COLOR_BACKGROUND
-	{1,1,0},		//COLOR_FREQ
-	{1,0,1},		//COLOR_LABEL
-	//spectrum
-	{0,0,0},	//SPECTRUM_BACKGROUND
-	{0.1, 0.1, 0.1}, //SPECTRUM_GRID
-	{1,1,0},	//SPECTRUM_PLOT
-	{0.2,0.2,0.2}, 	//SPECTRUM_NEEDLE
-	{0.5,0.5,0.5}, //COLOR_CONTROL_BOX
-	{0.2, 0.2, 0.2}, //SPECTRUM_BANDWIDTH
-	{0,1,0},	//COLOR_RX__PITCH
-	{0.1, 0.1, 0.2}, //SELECTED_LINE
-	{0.1, 0.1, 0.2}, // COLOR_FIELD_SELECTED
-	{1,0,0},	//COLOR_TX_PITCH
-};
-
-char *ui_font = "Sans";
-int field_font_size = 12;
-int screen_width=800, screen_height=480;
-
 // we just use a look-up table to define the fonts used
 // the struct field indexes into this table
 struct font_style {
@@ -145,8 +114,6 @@ struct font_style {
 	int type;
 	
 };
-
-unsigned int key_modifier = 0;
 
 struct encoder enc_a, enc_b;
 
@@ -183,7 +150,6 @@ struct console_line {
 static int console_style = FONT_LOG;
 static struct console_line console_stream[MAX_CONSOLE_LINES];
 int console_current_line = 0;
-int	console_selected_line = -1;
 struct Queue q_web;
 
 static uint8_t zbitx_available = 0;
@@ -269,15 +235,12 @@ static struct field *f_last_text = NULL;
 //variables to power up and down the tx
 
 static int in_tx = TX_OFF;
-static int key_down = 0;
 static int tx_start_time = 0;
 
 static int *tx_mod_buff = NULL;
 static int tx_mod_index = 0;
 static int tx_mod_max = 0;
 
-static int serial_fd = -1;
-static int xit = 512; 
 static long int tuning_step = 1000;
 static int tx_mode = MODE_USB;
 
@@ -321,12 +284,8 @@ struct band band_stack[] = {
 char vfo_a_mode[10];
 char vfo_b_mode[10];
 
-//usefull data for macros, logging, etc
-int	tx_id = 0;
-
 //recording duration in seconds
 time_t record_start = 0;
-int	data_delay = 700;
 
 #define MAX_RIT 25000
 
@@ -663,10 +622,6 @@ struct field *get_field(const char *cmd);
 void update_field(struct field *f);
 void tx_on();
 void tx_off();
-
-//#define MAX_CONSOLE_LINES 1000
-//char *console_lines[MAX_CONSOLE_LINES];
-int last_log = 0;
 
 struct field *get_field(const char *cmd){
 	for (int i = 0; active_layout[i].cmd[0] > 0; i++)
@@ -1302,81 +1257,6 @@ static int user_settings_handler(void *user, const char *section,
 	}
 	return 1;
 }
-static int user_settings_handler_old(void* user, const char* section, 
-            const char* name, const char* value)
-{
-    char cmd[1000];
-    char new_value[200];
-
-    strcpy(new_value, value);
-    if (!strcmp(section, "r1")){
-      sprintf(cmd, "%s:%s", section, name);
-      set_field(cmd, new_value);
-    }
-    else if (!strcmp(section, "tx")){
-      strcpy(cmd, name);
-      set_field(cmd, new_value);
-    }
-	else if (!strncmp(section, "#kbd", 4)){
-		return 1; //skip the keyboard values
-	}
-    // if it is an empty section
-    else if (strlen(section) == 0){
-      sprintf(cmd, "%s", name);
-			//skip the button actions 
-			struct field *f = get_field(cmd);
-			if (f){
-				if (f->value_type != FIELD_BUTTON)
-      		set_field(cmd, new_value); 
-			}
-    }
-
-		//band stacks
-		int band = -1;
-		if (!strcmp(section, "80M"))
-			band = 0;
-		else if (!strcmp(section, "60M"))
-			band = 1;
-		else if (!strcmp(section, "40M"))
-			band = 2;
-		else if (!strcmp(section, "30M"))
-			band = 3;
-		else if (!strcmp(section, "20M"))
-			band = 4;
-		else if (!strcmp(section, "17M"))
-			band = 5;
-		else if (!strcmp(section, "15M"))
-			band = 6;
-		else if (!strcmp(section, "12M"))	
-			band = 7;
-		else if (!strcmp(section, "10M"))
-			band = 8;	
-
-		//get the freq out first
-		int freq = atoi(value);
-		if (freq < band_stack[band].start || band_stack[band].stop < freq)
-			return 1;
-		if (band >= 0  && !strcmp(name, "freq0"))
-			band_stack[band].freq[0] = atoi(value);
-		else if (band >= 0  && !strcmp(name, "freq1"))
-			band_stack[band].freq[1] = atoi(value);
-		else if (band >= 0  && !strcmp(name, "freq2"))
-			band_stack[band].freq[2] = atoi(value);
-		else if (band >= 0  && !strcmp(name, "freq3"))
-			band_stack[band].freq[3] = atoi(value);
-		else if (band >= 0 && !strcmp(name, "mode0"))
-			band_stack[band].mode[0] = atoi(value);	
-		else if (band >= 0 && !strcmp(name, "mode1"))
-			band_stack[band].mode[1] = atoi(value);	
-		else if (band >= 0 && !strcmp(name, "mode2"))
-			band_stack[band].mode[2] = atoi(value);	
-		else if (band >= 0 && !strcmp(name, "mode3"))
-			band_stack[band].mode[3] = atoi(value);	
-
-    return 1;
-}
-/* rendering of the fields */
-
 // mod disiplay holds the tx modulation time domain envelope
 // even values are the maximum and the even values are minimum
 
@@ -1435,94 +1315,12 @@ void init_waterfall(){
 	}
 }
 
-char* freq_with_separators(const char* freq_str){
-
-  int freq = atoi(freq_str);
-  int f_mhz, f_khz, f_hz;
-  char temp_string[11];
-  static char return_string[11];
-
-  f_mhz = freq / 1000000;
-  f_khz = (freq - (f_mhz*1000000)) / 1000;
-  f_hz = freq - (f_mhz*1000000) - (f_khz*1000);
-
-  sprintf(temp_string,"%d",f_mhz);
-  strcpy(return_string,temp_string);
-  strcat(return_string,".");
-  if (f_khz < 100){
-    strcat(return_string,"0");
-  }
-  if (f_khz < 10){
-    strcat(return_string,"0");
-  }
-  sprintf(temp_string,"%d",f_khz);
-  strcat(return_string,temp_string);
-  strcat(return_string,".");
-  if (f_hz < 100){
-    strcat(return_string,"0");
-  }
-  if (f_hz < 10){
-    strcat(return_string,"0");
-  }
-  sprintf(temp_string,"%d",f_hz);
-  strcat(return_string,temp_string);
-  return return_string;
-}
-
-//the keyboard appears at the bottom 150 pixels of the window
-void keyboard_display(int show){
-	struct field *f;
-
-	//we start the height at -200 because the first key
-	//will bump it down by a row
-	int height = screen_height - 200; 
-	for (f = active_layout; f->cmd[0]; f++){
-		if (!strncmp(f->cmd,"#kbd", 4)){
-			//start of a new line? move down
-			if (f->x == 0)
-				height += 50;
-			update_field(f);
-			if (show && f->y < 0)
-				f->y = height;
-			else if (!show)
-				f->y = -1000;
-			update_field(f);
-		}
-	}
-}
-
-void field_move(char *field_label, int x, int y, int width, int height){
-	struct field *f = get_field_by_label(field_label);
-	if (!f)
-		return;
-	f->x = x;
-	f->y = y;
-
-	f->width = width;
-	f->height = height;
-	update_field(f);
-	if (!strcmp(field_label, "WATERFALL"))
-		init_waterfall();
-}
-
 void update_field(struct field *f){
 	if (f->y >= 0)
 		f->is_dirty = 1;
 	f->update_remote = 1;
 	f->updated_at = millis();
 } 
-
-static void hover_field(struct field *f){
-	struct field *prev_hover = f_hover;
-	if (f){
-		//set f_hover to none to remove the outline
-		f_hover = NULL;
-		update_field(prev_hover);
-	}
-	f_hover = f;
-	update_field(f);
-}
-
 
 // respond to a UI request to change the field value
 static void edit_field(struct field *f, int action){
@@ -1968,25 +1766,6 @@ int do_bandwidth(struct field *f, int event, int a, int b, int c){
 }
 
 static char tune_tx_saved_mode[100]={0};
-int do_tune_tx(struct field *f, int event, int a, int b, int c){
-	if(event == FIELD_EDIT){
-		printf("tune_tx : %s\n", f->value);
-		if (!strcmp(f->value, "ON")){
-			puts("Turning on TUNE");	
-			strcpy(tune_tx_saved_mode, get_field("r1:mode")->value);
-			field_set("MODE", "TUNE");	
-			update_field(get_field("r1:mode"));
-			tx_on(TX_SOFT);
-		}
-		else{
-			puts("Turning off TUNE");
-			tx_off();
-			field_set("MODE", tune_tx_saved_mode);	
-			update_field(get_field("r1:mode"));
-		}
-	}
-	return 0;
-}
 
 //called for RIT as well as the main tuning
 int do_tuning(struct field *f, int event, int a, int b, int c){
@@ -2119,15 +1898,6 @@ void open_url(char *url){
 	char temp_line[200];
 
 	sprintf(temp_line, "xdg-open  %s"
-	"  >/dev/null 2> /dev/null &", url);
-	execute_app(temp_line);
-}
-
-void open_chromeurl(char *url){
-	char temp_line[200];
-
-	sprintf(temp_line, "chromium-browser --log-leve=3 "
-	"--enable-features=OverlayScrollbar %s"
 	"  >/dev/null 2> /dev/null &", url);
 	execute_app(temp_line);
 }
@@ -2297,24 +2067,6 @@ void tx_off(){
 	sound_input(0); //it is a low overhead call, might as well be sure
 }
 
-
-static int layout_handler(void* user, const char* section, 
-            const char* name, const char* value)
-{
-	//the section is the field's name
-
-	printf("setting %s:%s to %d\n", section, name, atoi(value));
-	struct field *f = get_field(section);
-	if (!strcmp(name, "x"))
-		f->x = atoi(value);
-	else if (!strcmp(name, "y"))
-		f->y = atoi(value);
-	else if (!strcmp(name, "width"))
-		f->width = atoi(value);
-	else if (!strcmp(name, "height"))
-		f->height = atoi(value);	
-}
-
 void set_ui(int id){
 	struct field *f = get_field("#kbd_q");
 
@@ -2339,40 +2091,6 @@ void set_ui(int id){
 		}
 	}
 	current_layout = id;
-}
-
-int static cw_keydown = 0;
-int	static cw_hold_until = 0;
-int static cw_hold_duration = 150;
-
-static void cw_key(int state){
-	char response[100];
-	if (state == 1 && cw_keydown == 0){
-		sdr_request("key=down", response);
-		cw_keydown = 1;
-	}
-	else if (state == 0 && cw_keydown == 1){
-		cw_keydown = 0;
-	}
-	//printf("cw key = %d\n", cw_keydown);
-}
-
-static int control_down = 0;
-
-/*
-Turns out (after two days of debugging) that GTK is not thread-safe and
-we cannot invalidate the spectrum from another thread .
-This redraw is called from another thread. Hence, we set a flag here 
-that is read by a timer tick from the main UI thread and the window
-is posted a redraw signal that in turn triggers the redraw_all routine.
-Don't ask me, I only work around here.
-*/
-void redraw(){
-	struct field *f;
-	f = get_field("#console");
-	f->is_dirty = 1;
-	f = get_field("#text_in");
-	f->is_dirty = 1;
 }
 
 /* hardware specific routines */
@@ -2495,31 +2213,6 @@ void key_isr(void){
 	ptt_state = digitalRead(PTT);
 }
 
-void query_swr(){
-	uint8_t response[4];
-	int16_t vfwd, vref;
-	int  vswr;
-	char buff[20];
-
-	if (!in_tx)
-		return;
-	if(i2cbb_read_i2c_block_data(0x8, 0, 4, response) == -1)
-		return;
-
-	vfwd = vref = 0;
-
-	memcpy(&vfwd, response, 2);
-	memcpy(&vref, response+2, 2);
-	if (vref >= vfwd)
-		vswr = 100;
-	else
-		vswr = (10*(vfwd + vref))/(vfwd-vref);
-	sprintf(buff,"%d", (vfwd * 40)/68);
-	set_field("#fwdpower", buff);		
-	sprintf(buff, "%d", vswr);
-	set_field("#vswr", buff);
-}
-
 void hw_init(){
 	wiringPiSetup();
 	init_gpio_pins();
@@ -2572,26 +2265,8 @@ int get_cw_tx_pitch(){
 	return atoi(f->value);
 }
 
-int get_data_delay(){
-	return data_delay;
-}
-
-int get_wpm(){
-	struct field *f = get_field("#tx_wpm");
-	return atoi(f->value);
-}
-
 long get_freq(){
 	return atol(get_field("r1:freq")->value);
-}
-
-
-
-void bin_dump(int length, uint8_t *data){
-	printf("i2c: ");
-	for (int i = 0; i < length; i++)
-		printf("%x ", data[i]);
-	printf("\n");
 }
 
 int  web_get_console(char *buff, int max){
@@ -3026,26 +2701,12 @@ bool ui_tick(){
 		if (record_start)
 			update_field(get_field("#record"));
 
-		// alternate character from the softkeyboard upon long press
-		if (f_focus && focus_since + 500 < millis() 
-						&& !strncmp(f_focus->cmd, "#kbd_", 5) && mouse_down){
-			//emit the symbol
-			struct field *f_text = f_focus; //get_field("#text_in");
-			//replace the previous character with teh shifted one
-			edit_field(f_text,MIN_KEY_BACKSPACE); 
-			edit_field(f_text, f_focus->label[0]);
-			focus_since = millis();
-		}
-
     // check if low and high settings are stepping on each other
     char new_value[20];
     while (atoi(get_field("r1:low")->value) > atoi(get_field("r1:high")->value)){
       sprintf(new_value, "%d", atoi(get_field("r1:high")->value)+get_field("r1:high")->step);
       set_field("r1:high",new_value);
     }
-
-
-    static char last_mouse_pointer_value[16];
 
     int cursor_type;
 
@@ -3784,18 +3445,6 @@ void cmd_exec(char *cmd){
 	save_user_settings(0);
 }
 
-// From https://stackoverflow.com/questions/5339200/how-to-create-a-single-instance-application-in-c-or-c
-void ensure_single_instance(){
-	int pid_file = open("/tmp/sbitx.pid", O_CREAT | O_RDWR, 0666);
-	int rc = flock(pid_file, LOCK_EX | LOCK_NB);
-	if(rc) {
-    if(EWOULDBLOCK == errno){
-			printf("Another instance of sbitx is already running\n");
-			exit(0);
-		}	
-	}
-}
-
 int main( int argc, char* argv[] ) {
 
 	puts(VER_STR);
@@ -3922,23 +3571,3 @@ int main( int argc, char* argv[] ) {
 
 	return 0;
 }
-
-void tlog(char * id, char * text, int p) {
-	#define SL 1000
-	char s[SL];
-	int n = strlen(text);
-	if (n > SL) n = SL-2;
-	if (n > 0 && text[n-1] == '\n')  n--;
-	strncpy(s, text, n);
-	s[n] = '\0';
-	printf("%08d %s: %s %d\n", millis(), id, s, p);
-}
-
-/*
-void tlogf(char * format, ...) {
-	printf("%08d ", millis());
-	printf(format, __VA_ARGS__);
-	println();
-}
-*/
-
