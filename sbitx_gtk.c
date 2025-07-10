@@ -4661,8 +4661,6 @@ void do_control_action(char *cmd){
 	}
 	else if (!strcmp(request, "SET"))
 		settings_ui(window);
-	else if (!strcmp(request, "LOG"))
-		logbook_list_open();
 	else if (!strncmp(request, "BW ",3)){
 		int bw = atoi(request+3);	
 		set_filter_high_low(bw); //calls do_control_action again to set LOW and HIGH
