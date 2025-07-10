@@ -270,7 +270,6 @@ void set_bandwidth(int hz);
 GtkWidget *window;
 GtkWidget *display_area = NULL;
 GtkWidget *text_area = NULL;
-extern void settings_ui(GtkWidget*p);
 
 // these are callbacks called by the operating system
 static gboolean on_draw_event( GtkWidget* widget, cairo_t *cr, 
@@ -4659,8 +4658,6 @@ void do_control_action(char *cmd){
 		save_user_settings(1);
 		exit(0);
 	}
-	else if (!strcmp(request, "SET"))
-		settings_ui(window);
 	else if (!strncmp(request, "BW ",3)){
 		int bw = atoi(request+3);	
 		set_filter_high_low(bw); //calls do_control_action again to set LOW and HIGH
