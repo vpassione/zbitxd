@@ -2,8 +2,8 @@ TARGET = sbitx
 SOURCES = $(wildcard *.c)
 OBJECTS = $(SOURCES:.c=.o)
 HEADERS = $(wildcard *.h)
-CFLAGS = `pkg-config --cflags gtk+-3.0` -I.
-LIBS = -lwiringPi -lasound -lm -lfftw3 -lfftw3f -pthread -lncurses -lsqlite3 ft8_lib/libft8.a `pkg-config --libs gtk+-3.0`
+CFLAGS = -I.
+LIBS = -lwiringPi -lasound -lm -lfftw3 -lfftw3f -pthread -lncurses -lsqlite3 ft8_lib/libft8.a
 ifdef SBITX_DEBUG
 CFLAGS += -ggdb3 -fsanitize=address
 LIBS += -fsanitize=address
