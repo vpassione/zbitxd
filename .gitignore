@@ -1,9 +1,14 @@
+data/display_log.txt
 data/hw_settings.ini
+data/result_rows.txt
 data/user_settings.ini
 data/sbitx.db
 data/*.wis
+ft8_lib/libft8.a
+ft8_lib/test
 web/grids.txt
 unused/
 *.o
 build.log
-sbitx
+configure.h
+zbitxd

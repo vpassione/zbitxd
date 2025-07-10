@@ -11,9 +11,10 @@
 #include "sdr_ui.h"
 #include "logbook.h"
 #include "hist_disp.h"
+#include "configure.h"
 
 static const char *s_listen_on = "ws://0.0.0.0:8080";
-static char s_web_root[1000];
+static const char *s_web_root = SHAREDIR "/web";
 static char session_cookie[100];
 static struct mg_mgr mgr;  // Event manager
 
@@ -231,11 +232,6 @@ void webserver_stop(){
 static pthread_t webserver_thread;
 
 void webserver_start(){
-	char directory[200];	//dangerous, find the MAX_PATH and replace 200 with it
-	char *path = getenv("HOME");
-	strcpy(s_web_root, path);
-	strcat(s_web_root, "/sbitx/web");
-
 	//logbook_open();
  	pthread_create( &webserver_thread, NULL, webserver_thread_function, 
 		(void*)NULL);

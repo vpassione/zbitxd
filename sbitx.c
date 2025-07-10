@@ -21,6 +21,8 @@
 #include "i2cbb.h"
 #include "si5351.h"
 #include "ini.h"
+#include "configure.h"
+
 int set_field(char *, char *);  // This should be moved to a .h file
 
 #define DEBUG 0
@@ -63,7 +65,7 @@ void tr_switch(int tx_on);
 // if the Wisdom plans in the file were generated at the same or more rigorous level.
 #define WISDOM_MODE FFTW_MEASURE
 #define PLANTIME -1		// spend no more than plantime seconds finding the best FFT algorithm. -1 turns the platime cap off.
-char wisdom_file[] = "/home/pi/sbitx/data/sbitx_wisdom.wis";		// Moved to default data directory - N3SB
+char wisdom_file[] = STATEDIR "/sbitx_wisdom.wis";		// Moved to default data directory - N3SB
 
 fftw_complex *fft_out;		// holds the incoming samples in freq domain (for rx as well as tx)
 fftw_complex *fft_in;			// holds the incoming samples in time domain (for rx as well as tx) 
@@ -1036,15 +1038,9 @@ static int hw_settings_handler(void* user, const char* section,
 
 static void read_hw_ini(){
 	hw_init_index = 0;
-	char directory[PATH_MAX];
-	char *path = getenv("HOME");
-	strcpy(directory, path);
-	strcat(directory, "/sbitx/data/hw_settings.ini");
-  if (ini_parse(directory, hw_settings_handler, NULL)<0){
-    printf("Unable to load ~/sbitx/data/hw_settings.ini\nLoading default_hw_settings.ini instead\n");
-		strcpy(directory, path);
-		strcat(directory, "/sbitx/data/default_hw_settings.ini");
-  	ini_parse(directory, hw_settings_handler, NULL);
+  if (ini_parse(STATEDIR "/hw_settings.ini", hw_settings_handler, NULL)<0){
+    printf("Unable to load hw_settings.ini\nLoading default_hw_settings.ini instead\n");
+  	ini_parse(STATEDIR "/default_hw_settings.ini", hw_settings_handler, NULL);
   }
 }
 
@@ -1116,15 +1112,10 @@ void calibrate_band_power(struct power_settings *b){
 
 static void save_hw_settings(){
 	static int last_save_at = 0;
-	char file_path[200];	//dangerous, find the MAX_PATH and replace 200 with it
 
-	char *path = getenv("HOME");
-	strcpy(file_path, path);
-	strcat(file_path, "/sbitx/data/hw_settings.ini");
-
-	FILE *f = fopen(file_path, "w");
+	FILE *f = fopen(STATEDIR "/hw_settings.ini", "w");
 	if (!f){
-		printf("Unable to save %s : %s\n", file_path, strerror(errno));
+		printf("Unable to save " STATEDIR "/hw_settings.ini : %s\n", strerror(errno));
 		return;
 	}
 

@@ -30,6 +30,9 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include <errno.h>
 #include <wiringPi.h>
 #include <wiringSerial.h>
+#include <signal.h>
+#include <systemd/sd-daemon.h>
+#include <systemd/sd-journal.h>
 #include "sdr.h"
 #include "sound.h"
 #include "sdr_ui.h"
@@ -42,6 +45,7 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include "logbook.h"
 #include "hist_disp.h"
 #include "ntputil.h"
+#include "configure.h"
 
 #define FT8_START_QSO 1
 #define FT8_CONTINUE_QSO 0
@@ -1072,7 +1076,7 @@ static char *mode_name(int mode_id, char *name){
 
 static void save_user_settings(int forced){
 	static int last_save_at = 0;
-	char file_path[200];	//dangerous, find the MAX_PATH and replace 200 with it
+	char const *file_path = STATEDIR "/user_settings.ini";
 
 	//attempt to save settings only if it has been 30 seconds since the 
 	//last time the settings were saved
@@ -1080,9 +1084,6 @@ static void save_user_settings(int forced){
 	if ((now < last_save_at + 30000 || !settings_updated) && forced == 0)
 		return;
 
-	char *path = getenv("HOME");
-	strcpy(file_path, path);
-	strcat(file_path, "/sbitx/data/user_settings.ini");
 
 	//copy the current freq settings to the currently selected vfo
 	struct field *f_freq = get_field("r1:freq");
@@ -3290,13 +3291,6 @@ void cmd_exec(char *cmd){
 	else if (!strcmp(exec, "utc")){
 		utc_set(args, 1);
 	}
-	else if (!strcmp(exec, "logbook")){
-		char fullpath[200];	//dangerous, find the MAX_PATH and replace 200 with it
-		char *path = getenv("HOME");
-		sprintf(fullpath, "mousepad %s/sbitx/data/logbook.txt", path); 
-		execute_app(fullpath);
-		printf("fullpath");
-	}
 	else if (!strcmp(exec, "clear")){
 		console_init();
 	}
@@ -3445,7 +3439,35 @@ void cmd_exec(char *cmd){
 	save_user_settings(0);
 }
 
+// a global variable for our journal
+sd_journal *journal;
+
+// A signal handler for stopping
+static void
+stop(int sig)
+{
+  fprintf(stderr, SD_NOTICE "zbitx service is stopping\n");
+  sd_notify(0, "STOPPING=1");
+  sd_journal_close(journal);
+  exit(0);
+}
+
 int main( int argc, char* argv[] ) {
+
+	// Install our signal handlers
+	if(signal(SIGTERM, stop) == SIG_ERR)
+	{
+		sd_notifyf(0, "STATUS=Failed to install signal handler for stopping service %s\n"
+			"ERRNO=%i",
+			strerror(errno),
+			errno);
+	}
+
+	// open the journal
+	sd_journal_open(&journal, 0);
+
+	fprintf(stderr, SD_NOTICE "zBitx service started\n");
+	sd_journal_print(LOG_NOTICE, "zBitx service started\n");
 
 	puts(VER_STR);
 	active_layout = main_controls;
@@ -3504,16 +3526,10 @@ int main( int argc, char* argv[] ) {
 	set_field("r1:gain", "41");
 	set_field("r1:volume", "85");
 
-	char directory[200];	//dangerous, find the MAX_PATH and replace 200 with it
-	char *path = getenv("HOME");
-	strcpy(directory, path);
-	strcat(directory, "/sbitx/data/user_settings.ini");
-  if (ini_parse(directory, user_settings_handler, NULL)<0){
-    printf("Unable to load ~/sbitx/data/user_settings.ini\n"
+  if (ini_parse(STATEDIR "/user_settings.ini", user_settings_handler, NULL)<0){
+    printf("Unable to load user_settings.ini\n"
 		"Loading default.ini instead\n");
-		strcpy(directory, path);
-		strcat(directory, "/sbitx/data/default_settings.ini");
-  	ini_parse(directory, user_settings_handler, NULL);
+  	ini_parse(STATEDIR "/default_settings.ini", user_settings_handler, NULL);
   }
 
 	//the logger fields may have an unfinished qso details
@@ -3562,8 +3578,10 @@ int main( int argc, char* argv[] ) {
 //	sch.sched_priority = sched_get_priority_max(SCHED_FIFO);
 //	pthread_setschedparam(pthread_self(), SCHED_FIFO, &sch);
 
-	struct timespec loopms = {0 /*secs*/, 1000000 /*nanosecs*/};
+	// tell the service manager we're in the ready state
+	sd_notify(0, "READY=1");
 
+	struct timespec loopms = {0 /*secs*/, 1000000 /*nanosecs*/};
 	while(1) {
 		ui_tick();
 		nanosleep(&loopms, &loopms);

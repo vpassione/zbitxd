@@ -26,6 +26,7 @@
 #include "sdr.h"
 #include "sdr_ui.h"
 #include "logbook.h"
+#include "configure.h"
 
 #include <sqlite3.h>
 
@@ -77,8 +78,7 @@ int logbook_query(char *query, int from_id, char *result_file){
 	//printf("[%s]\n", statement);
 	sqlite3_prepare_v2(db, statement, -1, &stmt, NULL);
 
-	char output_path[200];	//dangerous, find the MAX_PATH and replace 200 with it
-	sprintf(output_path, "%s/sbitx/data/result_rows.txt", getenv("HOME"));
+	const char *output_path = STATEDIR "/result_rows.txt";
 	strcpy(result_file, output_path);
 	
 	FILE *pf = fopen(output_path, "w");
@@ -261,8 +261,7 @@ int logbook_prev_log(const char *callsign, char *result){
 }
 
 void logbook_open(){
-	char db_path[200];	//dangerous, find the MAX_PATH and replace 200 with it
-	sprintf(db_path, "%s/sbitx/data/sbitx.db", getenv("HOME"));
+	const char *db_path = STATEDIR "/sbitx.db";
 
 	rc = sqlite3_open(db_path, &db);
 }

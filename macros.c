@@ -3,6 +3,7 @@
 #include <string.h>
 #include <dirent.h>
 #include "sdr_ui.h"
+#include "configure.h"
 
 int macro_exec(int key, char *dest);
 void macro_get_var(char *var, char *s);
@@ -36,12 +37,7 @@ void macro_get_keys(char *output){
 }
 
 void macro_list(char *output){
-	char full_path[200];	//dangerous, find the MAX_PATH and replace 200 with it
-
-	char *home_path = getenv("HOME");
-	strcpy(full_path, home_path);
-	strcat(full_path, "/sbitx/web/");
-	DIR *d = opendir(full_path);
+	DIR *d = opendir(SHAREDIR "/web/");
   struct dirent *dir;
 
 	if (!d){
@@ -82,9 +78,7 @@ int  macro_load(char *filename, char *output){
 	char macro_line[255];
 	char full_path[200];	//dangerous, find the MAX_PATH and replace 200 with it
 
-	char *home_path = getenv("HOME");
-	strcpy(full_path, home_path);
-	strcat(full_path, "/sbitx/web/");
+	strcpy(full_path, SHAREDIR "/web/");
 	strcat(full_path, filename);
 	strcat(full_path, ".mc");
 	FILE *pf = fopen(full_path, "r");
