@@ -3,9 +3,13 @@
 echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
 date
 cd $HOME/zbitxd
+git checkout main
 git pull
+latesttag=$(git describe --tag --abbrev=0)
+echo checking out latest release ${latesttag}
+git -c advice.detachedHead=false checkout ${latesttag}
 make
 sudo make install
 echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
 
-echo "zbitxd has been installed successfully. You can now close this window."
+echo "zbitxd has been installed successfully."
