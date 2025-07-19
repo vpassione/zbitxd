@@ -44,7 +44,6 @@ The initial sync between the gui values, the core radio values, settings, et al 
 #include "webserver.h"
 #include "logbook.h"
 #include "hist_disp.h"
-#include "ntputil.h"
 #include "configure.h"
 
 #define FT8_START_QSO 1
@@ -777,7 +776,7 @@ int remote_update_field(int i, char *text){
 	//always send status afresh
 	if (!strcmp(f->label, "STATUS")){
 		//send time
-		time_t now = time_sbitx();
+		time_t now = time(NULL);
 		struct tm *tmp = gmtime(&now);
 		sprintf(text, "STATUS %04d/%02d/%02d %02d:%02d:%02dZ",  
 			tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday, tmp->tm_hour, tmp->tm_min, tmp->tm_sec); 
@@ -2588,19 +2587,6 @@ void zbitx_init(){
 	}
 }
 
-int next_sync = 0; //sets to -1  after a network update
-void try_ntp(){
-	const char* ntp_server = "time.google.com";
-
-	if (next_sync > millis() || next_sync == -1)
-		return;
- 
-  if(sync_sbitx_time(ntp_server) != -1)
-		next_sync = -1;
-	else 
-		next_sync = millis() + 30000;
-}
-
 bool ui_tick(){
 	int static ticks = 0;
 
@@ -2673,8 +2659,6 @@ bool ui_tick(){
 
 		if (zbitx_available)
 			zbitx_poll(0);
-
-		try_ntp();
 
 		if(in_tx){
 			char buff[10];
@@ -2853,60 +2837,6 @@ void change_band(char *request){
 
 	abort_tx();
 }
-
-void utc_set(char *args, int update_rtc){
-	int n[7], i;
-	char *p, *q;
-	struct tm t;
-	time_t gm_now;
-
-	i = 0;
-	p =  strtok(args, "-/;: ");
-	if (p){
-		n[0] = atoi(p);
-		for (i = 1; i < 7; i++){
-			p = strtok(NULL, "-/;: ");
-			if (!p)
-				break;
-			n[i] = atoi(p);
-		}
-	}	
-
-	if (i != 6 ){
-		write_console(FONT_LOG, 
-			"Sets the current UTC Time for logging etc.\nUsage \\utc yyyy mm dd hh mm ss\nWhere\n"
-			"  yyyy is a four digit year like 2022\n"
-			"  mm is two digit month [1-12]\n"
-			"  dd is two digit day of the month [0-31]\n"
-			"  hh is two digit hour in 24 hour format (UTC)\n"
-			"  mm is two digit minutes in 24 hour format(UTC)\n"
-			"  ss is two digit seconds in [0-59]\n"
-			"ex: \\utc 2022 07 14 8:40:00\n"); 
-			return;
-	}
-
-	rtc_write_ntp(n[0], n[1], n[2], n[3], n[4], n[5]);
- 	rtc_read();
-
-	if (n[0] < 2000)
-		n[0] += 2000;
-	t.tm_year = n[0] - 1900;
-	t.tm_mon = n[1] - 1;
-	t.tm_mday = n[2]; 
-	t.tm_hour = n[3];
-	t.tm_min = n[4];
-	t.tm_sec = n[5];
-
-	tzname[0] = tzname[1] = "GMT";
-	timezone = 0;
-	daylight = 0;
-	setenv("TZ", "UTC", 1);	
-	gm_now = mktime(&t);
-
-	write_console(FONT_LOG, "UTC time is set\n");
-}
-
-
 
 void meter_calibrate(){
 	//we change to 40 meters, cw
@@ -3277,8 +3207,6 @@ void cmd_exec(char *cmd){
 	}
 	else if (!strcmp(exec, "abort"))
 		abort_tx();
-	else if (!strcmp(exec, "rtc"))
-		rtc_read();
 	else if (!strcmp(exec, "txcal")){
 		char response[10];
 		sdr_request("txcal=", response);
@@ -3287,9 +3215,6 @@ void cmd_exec(char *cmd){
 		set_field("#mygrid", args);
 		sprintf(response, "\n[Your grid is set to %s]\n", get_field("#mygrid")->value);
 		write_console(FONT_LOG, response);
-	}
-	else if (!strcmp(exec, "utc")){
-		utc_set(args, 1);
 	}
 	else if (!strcmp(exec, "clear")){
 		console_init();
@@ -3496,9 +3421,6 @@ int main( int argc, char* argv[] ) {
 	else
 		setup("plughw:0,0");	// otherwise use the default audio output device
 
-	const char* ntp_server = "time.google.com";
-  sync_sbitx_time(ntp_server);
-
 	struct field *f;
 	f = active_layout;
 	field_init();		
@@ -3569,7 +3491,6 @@ int main( int argc, char* argv[] ) {
   hamlib_start();
 	remote_start();
 
-	rtc_read();
 	zbitx_init();
 
 	if (zbitx_available)

@@ -51,7 +51,6 @@ void macro_list(char *output);
 void macro_get_keys(char *output);
 void update_log_ed();
 void write_call_log();
-time_t time_sbitx();
 
 void tlog(char * id, char * text, int p);
 //void tlogf(char * format, ...);
