@@ -2,11 +2,12 @@
 #
 echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
 date
-cd $HOME/zbitxd
+cd "$(dirname "$0")"
+echo "*** download..."
 git checkout main
 git pull
 latesttag=$(git describe --tag --abbrev=0)
-echo checking out latest release ${latesttag}
+echo "*** checking out, build and install latest release ${latesttag}"
 git -c advice.detachedHead=false checkout ${latesttag}
 make
 sudo make install
