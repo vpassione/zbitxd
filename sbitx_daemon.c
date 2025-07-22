@@ -1087,6 +1087,11 @@ static void save_user_settings(int forced){
 	//copy the current freq settings to the currently selected vfo
 	struct field *f_freq = get_field("r1:freq");
 	struct field *f_vfo  = get_field("#vfo");
+	if (f_vfo->value[0] == 'A')
+		set_field("#vfo_a_freq", f_freq->value);
+	else
+		set_field("#vfo_b_freq", f_freq->value);
+
 
 	FILE *f = fopen(file_path, "w");
 	if (!f){
