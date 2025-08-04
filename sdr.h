@@ -60,6 +60,11 @@ have continuos waveform.
 
 */
 
+#include <stdio.h>
+#include <stdint.h>
+#include <complex.h>
+#include <fftw3.h>
+
 struct Queue {
     int id;
     int head;

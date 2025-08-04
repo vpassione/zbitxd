@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #define FT8_MAX_BUFF (12000 * 18)
 void ft8_rx(int32_t *samples, int count);
 void ft8_init();
