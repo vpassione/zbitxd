@@ -25,7 +25,7 @@ STRIP = strip
 $(TARGET): create_configure.h $(OBJECTS) ft8_lib/libft8.a
 	$(LINK) $(LFLAGS) -o $(TARGET) $(OBJECTS) $(LIBPATH) $(LIBS)
 
-.c.o: $(HEADERS)
+%.o: %.c $(HEADERS)
 	$(CC) -c $(CFLAGS) $(DEBUGFLAGS) $(INCPATH) -o $@ $<
 
 create_configure.h:

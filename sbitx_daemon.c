@@ -52,70 +52,23 @@ struct Queue q_remote_commands;
 struct Queue q_zbitx_console;
 
 /* Front Panel controls */
-char pins[15] = {0, 2, 3, 6, 7, 10, 11, 12, 13, 14, 21, 22, 23, 25, 27};
+char pins[6] = {1, 2, 3, 24, 28, 29};	// WM8731 Codec pins, should be in sbitx.c?
 
-#define ENC1_A (13)
-#define ENC1_B (12)
-#define ENC1_SW (14)
-
-#define ENC2_A (0)
-#define ENC2_B (2)
-#define ENC2_SW (3)
-
-#define SW5 (22)
-#define PTT (7)
+#define PTT (7)		// PTT and DOT share the same pin
+#define DOT (7)		// Straight key uses the DOT pin
 #define DASH (21)
-
-#define ENC_FAST 1
-#define ENC_SLOW 5
 
 #define DS3231_I2C_ADD 0x68
 // time sync, when the NTP time is not synced, this tracks the number of seconds
 // between the system cloc and the actual time set by \utc command
 
-// encoder state
-struct encoder {
-    int pin_a, pin_b;
-    int speed;
-    int prev_state;
-    int history;
-};
-void tuning_isr(void);
-
-#define COLOR_SELECTED_TEXT 0
-#define COLOR_TEXT 1
-#define COLOR_TEXT_MUTED 2
-#define COLOR_SELECTED_BOX 3
-#define COLOR_BACKGROUND 4
-#define COLOR_FREQ 5
-#define COLOR_LABEL 6
-#define SPECTRUM_BACKGROUND 7
-#define SPECTRUM_GRID 8
-#define SPECTRUM_PLOT 9
-#define SPECTRUM_NEEDLE 10
-#define COLOR_CONTROL_BOX 11
-#define SPECTRUM_BANDWIDTH 12
-#define COLOR_RX_PITCH 13
-#define SELECTED_LINE 14
-#define COLOR_FIELD_SELECTED 15
-#define COLOR_TX_PITCH 16
-
-// we just use a look-up table to define the fonts used
-// the struct field indexes into this table
-struct font_style {
-    int index;
-    double r, g, b;
-    char name[32];
-    int height;
-    int weight;
-    int type;
-};
-
-struct encoder enc_a, enc_b;
-
 // keyer polling variables
-// the PTT and DASH lines are pulled high
-int ptt_state = HIGH, dash_state = HIGH;
+// the DOT and DASH lines are pulled high
+int dot_state = HIGH;
+int	dash_state = HIGH;
+
+int cw_method = CW_STRAIGHT;
+
 struct field *cw_input = NULL;
 struct field *f_mode = NULL;
 struct field *f_text_in = NULL;
@@ -138,7 +91,6 @@ struct field *f_pitch = NULL;
 static int console_cols = 50;
 
 // we use just one text list in our user interface
-
 struct console_line {
     char text[MAX_LINE_LENGTH];
     int style;
@@ -150,7 +102,7 @@ struct Queue q_web;
 
 static uint8_t zbitx_available = 0;
 int update_logs = 0;
-#define ZBITX_I2C_ADDRESS 0xa
+#define ZBITX_I2C_ADDRESS 0x0a
 void zbitx_init();
 void zbitx_poll(int all);
 void zbitx_pipe(int style, char *text);
@@ -186,7 +138,6 @@ void zbitx_write(int style, char *text);
 #define COMMAND_ESCAPE '\\'
 
 void set_ui(int id);
-void set_bandwidth(int hz);
 
 struct field {
     char *cmd;
@@ -493,37 +444,23 @@ struct field main_controls[] = {
 
     // row 1
     {"#mf1", do_macro, 0, 1360, 65, 40, "F1", 1, "CQ", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mf2", do_macro, 65, 1360, 65, 40, "F2", 1, "Call", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mf3", do_macro, 130, 1360, 65, 40, "F3", 1, "Reply", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mf4", do_macro, 195, 1360, 65, 40, "F4", 1, "RRR", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mf5", do_macro, 260, 1360, 70, 40, "F5", 1, "73", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mf6", do_macro, 330, 1360, 70, 40, "F6", 1, "Call", FIELD_BUTTON, "", 0, 0, 0, 0},
 
     // row 2
-
     {"#mf7", do_macro, 0, 1400, 65, 40, "F7", 1, "Exch", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mf8", do_macro, 65, 1400, 65, 40, "F8", 1, "Tu", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mf9", do_macro, 130, 1400, 65, 40, "F9", 1, "Rpt", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mf10", do_macro, 195, 1400, 65, 40, "F10", 1, "", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mf11", do_macro, 260, 1400, 70, 40, "F11", 1, "", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mf12", do_macro, 330, 1400, 70, 40, "F12", 1, "", FIELD_BUTTON, "", 0, 0, 0, 0},
 
     // row 3
-
     {"#mfedit", do_macro, 195, 1440, 65, 40, "Edit", 1, "", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mfspot", do_macro, 260, 1440, 70, 40, "Spot", 1, "", FIELD_BUTTON, "", 0, 0, 0, 0},
-
     {"#mfkbd", do_macro, 330, 1440, 70, 40, "Kbd", 1, "", FIELD_BUTTON, "", 0, 0, 0, 0},
 
     // the last control has empty cmd field
@@ -700,7 +637,6 @@ int remote_update_field(int i, char *text) {
 
 // log is a special field that essentially is a like text
 // on a terminal
-
 void console_init() {
     for (int i = 0; i < MAX_CONSOLE_LINES; i++) {
         console_stream[i].text[0] = 0;
@@ -920,30 +856,6 @@ static int mode_id(const char *mode_str) {
     return -1;
 }
 
-/*
-static int mode_id(const char *mode_str){
-        if (!strcmp(mode_str, "CW"))
-                return MODE_CW;
-        else if (!strcmp(mode_str, "CWR"))
-                return MODE_CWR;
-        else if (!strcmp(mode_str, "USB"))
-                return MODE_USB;
-        else if (!strcmp(mode_str,  "LSB"))
-                return MODE_LSB;
-        else if (!strcmp(mode_str,  "FT8"))
-                return MODE_FT8;
-        else if (!strcmp(mode_str, "NBFM"))
-                return MODE_NBFM;
-        else if (!strcmp(mode_str, "AM"))
-                return MODE_AM;
-        else if (!strcmp(mode_str, "2TONE"))
-                return MODE_2TONE;
-        else if (!strcmp(mode_str, "DIGI"))
-                return MODE_DIGITAL;
-        return -1;
-}
-*/
-
 static char *mode_name(int mode_id, char *name) {
 
     switch (mode_id) {
@@ -1072,23 +984,6 @@ static int user_settings_handler(void *user, const char *section, const char *na
             if (f->value_type != FIELD_BUTTON) {
                 set_field(cmd, new_value);
             }
-            /*
-                    char *bands = "#80m#60m#40m#30m#20m#17m#15m#12m#10m";
-                    char *ptr = strstr(bands, cmd);
-                    if (ptr != NULL)
-                    {
-                            // Set the selected band stack index
-                            int band = (ptr - bands) / 4;
-                            int ix = get_band_stack_index(new_value);
-                            if (ix < 0)
-                            {
-                                    // printf("Band stack index for %c%cm set to 0!\n", *(ptr+1), *(ptr+2));
-                                    ix = 0;
-                            }
-                            band_stack[band].index = ix;
-                            settings_updated++;
-                    }
-            */
         }
         return 1;
     }
@@ -1136,12 +1031,6 @@ static int user_settings_handler(void *user, const char *section, const char *na
             band_stack[band].mode[2] = atoi(value);
         else if (!strcmp(name, "mode3"))
             band_stack[band].mode[3] = atoi(value);
-        /*		else if (!strcmp(name, "gain"))
-                                band_stack[band].if_gain = atoi(value);
-                        else if (!strcmp(name, "drive"))
-                                band_stack[band].drive = atoi(value);
-                        else if (!strcmp(name, "tnpwr"))
-                                band_stack[band].tnpwr = atoi(value);*/
     }
     return 1;
 }
@@ -1480,25 +1369,14 @@ void set_filter_high_low(int hz) {
     sprintf(buff, "%d", high);
     set_field("r1:high", buff);
 }
+
 int do_status(struct field *f, int event, int a, int b, int c) {
     char buff[100];
 
     if (event == FIELD_DRAW) {
-        // time_t now = time_sbitx();
-        // struct tm *tmp = gmtime(&now);
-        // sprintf(buff, "%04d/%02d/%02d %02d:%02d:%02dZ",
-        //	tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday, tmp->tm_hour, tmp->tm_min, tmp->tm_sec);
-        // int width = measure_text(gfx, buff, FONT_FIELD_LABEL);
-        // int line_height = font_table[f->font_index].height;
-        // strcpy(f->value, buff);
         f->is_dirty = 1;
         f->update_remote = 1;
         f->updated_at = millis();
-        // sprintf(buff, "sBitx %s %s %04d/%02d/%02d %02d:%02d:%02dZ",
-        //	get_field("#mycallsign")->value, get_field("#mygrid")->value,
-        //	tmp->tm_year + 1900, tmp->tm_mon + 1, tmp->tm_mday, tmp->tm_hour, tmp->tm_min, tmp->tm_sec);
-        // gtk_window_set_title( GTK_WINDOW(window), buff);
-
         return 1;
     }
     return 0;
@@ -1546,25 +1424,6 @@ int do_text(struct field *f, int event, int a, int b, int c) {
         f_last_text = f;
         return 1;
     } else if (event == FIELD_DRAW) {
-        // if (f_focus == f)
-        //	fill_rect(gfx, f->x, f->y, f->width,f->height, COLOR_FIELD_SELECTED);
-        // else
-        //	fill_rect(gfx, f->x, f->y, f->width,f->height, COLOR_BACKGROUND);
-
-        // rect(gfx, f->x, f->y, f->width-1,f->height, COLOR_CONTROL_BOX, 1);
-        // text_length = strlen(f->value);
-        // line_start = 0;
-        // y = f->y + 1;
-        // text_line_width= measure_text(gfx, f->value, f->font_index);
-        // if (!strlen(f->value))
-        //	draw_text(gfx, f->x + 1, y+1, f->label, FONT_FIELD_LABEL);
-        // else
-        //	draw_text(gfx, f->x + 1, y+1, f->value, f->font_index);
-        ////draw the text cursor, if there is no text, the text baseline is zero
-        // if (f_focus == f){
-        //	fill_rect(gfx, f->x + text_line_width+3, y+16, 9, 2, COLOR_SELECTED_BOX);
-        // }
-
         return 1;
     }
     return 0;
@@ -1717,7 +1576,6 @@ int do_tuning(struct field *f, int event, int a, int b, int c) {
         return 1;
     } else if (event == FIELD_DRAW) {
         // draw_dial(f, gfx);
-
         return 1;
     }
     return 0;
@@ -1725,31 +1583,6 @@ int do_tuning(struct field *f, int event, int a, int b, int c) {
 
 int do_kbd(struct field *f, int event, int a, int b, int c) {
     if (event == FIELD_DRAW) {
-        // int label_height = font_table[FONT_FIELD_LABEL].height;
-        // int width = measure_text(gfx, f->label, FONT_FIELD_LABEL);
-        // int offset_x = f->x + f->width/2 - width/2;
-        // int label_y;
-        // int value_font;
-
-        // fill_rect(gfx, f->x, f->y, f->width,f->height, COLOR_BACKGROUND);
-        // rect(gfx, f->x, f->y, f->width,f->height, COLOR_CONTROL_BOX, 1);
-        ////is it a two line display or a single line?
-        // if (!f->value[0]){
-        //	label_y = f->y + (f->height - label_height)/2;
-        //	draw_text(gfx, offset_x,label_y, f->label, FONT_FIELD_LABEL);
-        // }
-        // else {
-        //	if(width >= f->width+2)
-        //		value_font = FONT_SMALL_FIELD_VALUE;
-        //	else
-        //		value_font = FONT_FIELD_VALUE;
-        //	int value_height = font_table[value_font].height;
-        //	label_y = f->y +3;
-        //	draw_text(gfx, f->x + 3, label_y, f->label, FONT_FIELD_LABEL);
-        //	width = measure_text(gfx, f->value, value_font);
-        //	label_y = f->y + (f->height - label_height)/2;
-        //	draw_text(gfx, f->x + f->width/2 - width/2, label_y, f->value, value_font);
-        // }
         return 1;
     }
     return 0;
@@ -1797,25 +1630,6 @@ int do_macro(struct field *f, int event, int a, int b, int c) {
         }
         return 1;
     } else if (event == FIELD_DRAW) {
-        // int width, offset, text_length, line_start, y;
-        // char this_line[MAX_FIELD_LENGTH];
-        // int text_line_width = 0;
-
-        // fill_rect(gfx, f->x, f->y, f->width,f->height, COLOR_BACKGROUND);
-        // rect(gfx, f->x, f->y, f->width,f->height, COLOR_CONTROL_BOX, 1);
-
-        // width = measure_text(gfx, f->label, FONT_FIELD_LABEL);
-        // offset = f->width/2 - width/2;
-        // if (strlen(f->value) == 0)
-        //	draw_text(gfx, f->x +5, f->y+13 , f->label , FONT_FIELD_LABEL);
-        // else {
-        //	if (strlen(f->label)){
-        //		draw_text(gfx, f->x+5, f->y+5 ,  f->label, FONT_FIELD_LABEL);
-        //		draw_text(gfx, f->x+5 , f->y+f->height - 20 , f->value , f->font_index);
-        //	}
-        //	else
-        //		draw_text(gfx, f->x+offset , f->y+5, f->value , f->font_index);
-        //	}
         return 1;
     }
 
@@ -1824,36 +1638,6 @@ int do_macro(struct field *f, int event, int a, int b, int c) {
 
 int do_record(struct field *f, int event, int a, int b, int c) {
     if (event == FIELD_DRAW) {
-
-        // if (f_focus == f)
-        //	rect(gfx, f->x, f->y, f->width-1,f->height, COLOR_SELECTED_BOX, 2);
-        // else if (f_hover == f)
-        //	rect(gfx, f->x, f->y, f->width,f->height, COLOR_SELECTED_BOX, 1);
-        // else
-        //	rect(gfx, f->x, f->y, f->width,f->height, COLOR_CONTROL_BOX, 1);
-
-        // int width = measure_text(gfx, f->label, FONT_FIELD_LABEL);
-        // int offset = f->width/2 - width/2;
-        // int	label_y = f->y + ((f->height
-        //	- font_table[FONT_FIELD_LABEL].height - 5
-        //	- font_table[FONT_FIELD_VALUE].height)/2);
-        // draw_text(gfx, f->x + offset, label_y, f->label, FONT_FIELD_LABEL);
-
-        // char duration[12];
-        // label_y += font_table[FONT_FIELD_LABEL].height;
-
-        // if (record_start){
-        //	width = measure_text(gfx, f->value, f->font_index);
-        //	offset = f->width/2 - width/2;
-        //	time_t duration_seconds = time(NULL) - record_start;
-        //	int minutes = duration_seconds/60;
-        //	int seconds = duration_seconds % 60;
-        //	sprintf(duration, "%d:%02d", minutes, seconds);
-        // }
-        // else
-        //	strcpy(duration, "OFF");
-        // width = measure_text(gfx, duration, FONT_FIELD_VALUE);
-        // draw_text(gfx, f->x + f->width/2 - width/2, label_y, duration, f->font_index);
         return 1;
     }
     return 0;
@@ -1958,128 +1742,44 @@ void set_ui(int id) {
 /* hardware specific routines */
 
 void init_gpio_pins() {
-    for (int i = 0; i < 15; i++) {
+    for (int i = 0; i < 6; i++) {	// WM8731 Codec pins, should be in sbitx.c?
         pinMode(pins[i], INPUT);
         pullUpDnControl(pins[i], PUD_UP);
     }
 
-    pinMode(PTT, INPUT);
+    pinMode(PTT, INPUT);			// PTT and DOT share the same pin
     pullUpDnControl(PTT, PUD_UP);
     pinMode(DASH, INPUT);
     pullUpDnControl(DASH, PUD_UP);
 }
 
 int key_poll() {
-    int key = CW_IDLE;
-    // int input_method = get_cw_input_method();
-    if (cw_input == NULL) {
-        printf("cw_input field must point to the CW_INPUT field\n");
-        return 0;
-    }
 
-    // quick look up of one of the three values of keying type
-    // STRAIG[H]T
-    // IAMBIC[\0]
-    // IAMBIC[B]
-
-    int input_method = CW_IAMBIC;
-    switch (cw_input->value[6]) {
-    case 0:
-        input_method = CW_IAMBIC;
-        break;
-    case 'H':
-        input_method = CW_STRAIGHT;
-        break;
-    case 'B':
-        input_method = CW_IAMBICB;
-        break;
-    }
-
-    if (input_method == CW_IAMBIC || input_method == CW_IAMBICB) {
-        if (ptt_state == LOW)
-            // if (digitalRead(PTT) == LOW)
-            key |= CW_DASH;
-        if (dash_state == LOW)
-            // if (digitalRead(DASH) == LOW)
+	if (cw_method = CW_STRAIGHT) {							// Straight Key
+		if (dot_state == LOW)
+			return CW_DOWN;
+		return CW_IDLE;
+	}
+	if (cw_method = CW_IAMBIC || cw_method = CW_IAMBICB) {	// Iambic
+		int key = CW_IDLE;
+		if (dot_state == LOW)
             key |= CW_DOT;
-    }
-    // straight key
-    else if (ptt_state == LOW || dash_state == LOW)
-        key = CW_DOWN;
-
-    return key;
-}
-
-void enc_init(struct encoder *e, int speed, int pin_a, int pin_b) {
-    e->pin_a = pin_a;
-    e->pin_b = pin_b;
-    e->speed = speed;
-    e->history = 5;
-}
-
-int enc_state(struct encoder *e) { return (digitalRead(e->pin_a) ? 1 : 0) + (digitalRead(e->pin_b) ? 2 : 0); }
-
-int enc_read(struct encoder *e) {
-    int result = 0;
-    int newState;
-
-    newState = enc_state(e); // Get current state
-
-    if (newState != e->prev_state)
-        delay(1);
-
-    if (enc_state(e) != newState || newState == e->prev_state)
-        return 0;
-
-    // these transitions point to the encoder being rotated anti-clockwise
-    if ((e->prev_state == 0 && newState == 2) || (e->prev_state == 2 && newState == 3) ||
-        (e->prev_state == 3 && newState == 1) || (e->prev_state == 1 && newState == 0)) {
-        e->history--;
-        // result = -1;
-    }
-    // these transitions point to the enccoder being rotated clockwise
-    if ((e->prev_state == 0 && newState == 1) || (e->prev_state == 1 && newState == 3) ||
-        (e->prev_state == 3 && newState == 2) || (e->prev_state == 2 && newState == 0)) {
-        e->history++;
-    }
-    e->prev_state = newState; // Record state for next pulse interpretation
-    if (e->history > e->speed) {
-        result = 1;
-        e->history = 0;
-    }
-    if (e->history < -e->speed) {
-        result = -1;
-        e->history = 0;
-    }
-    return result;
-}
-
-static int tuning_ticks = 0;
-void tuning_isr(void) {
-    int tuning = enc_read(&enc_b);
-    if (tuning < 0)
-        tuning_ticks++;
-    if (tuning > 0)
-        tuning_ticks--;
+		if (dash_state == LOW)
+            key |= CW_DASH;
+		return key;
+	}
 }
 
 void key_isr(void) {
     dash_state = digitalRead(DASH);
-    ptt_state = digitalRead(PTT);
+    dot_state = digitalRead(DOT);
 }
 
 void hw_init() {
-    wiringPiSetup();
+    wiringPiSetupPinType(WPI_PIN_WPI);			// Use WiringPi numbering (WPI) of the GPIOs
     init_gpio_pins();
 
-    enc_init(&enc_a, ENC_FAST, ENC1_B, ENC1_A);
-    enc_init(&enc_b, ENC_FAST, ENC2_A, ENC2_B);
-
-    //	int e = g_timeout_add(1, ui_tick, NULL);
-
-    wiringPiISR(ENC2_A, INT_EDGE_BOTH, tuning_isr);
-    wiringPiISR(ENC2_B, INT_EDGE_BOTH, tuning_isr);
-    wiringPiISR(PTT, INT_EDGE_BOTH, key_isr);
+    wiringPiISR(DOT, INT_EDGE_BOTH, key_isr);	// Could use wiringPiISR2 for debounce
     wiringPiISR(DASH, INT_EDGE_BOTH, key_isr);
 }
 
@@ -2094,18 +1794,6 @@ void hamlib_tx(int tx_input) {
 }
 
 int get_cw_delay() { return atoi(get_field("#cwdelay")->value); }
-
-int get_cw_input_method() {
-    struct field *f = get_field("#cwinput");
-    if (!strcmp(f->value, "KEYBOARD"))
-        return CW_KBD;
-    else if (!strcmp(f->value, "IAMBIC"))
-        return CW_IAMBIC;
-    else if (!strcmp(f->value, "IAMBICB"))
-        return CW_IAMBICB;
-    else
-        return CW_STRAIGHT;
-}
 
 int get_pitch() {
     struct field *f = get_field("rx_pitch");
@@ -2139,7 +1827,6 @@ int web_get_console(char *buff, int max) {
 }
 
 void web_get_spectrum(char *buff) {
-
     int n_bins = (int)((1.0 * spectrum_span) / 46.875);
     // the center frequency is at the center of the lower sideband,
     // i.e, three-fourth way up the bins.
@@ -2235,7 +1922,7 @@ void zbitx_write(int style, char *text) {
     q_write(&q_zbitx_console, 0);
 }
 
-// cramp all the spectrum into 250 points
+// cram all the spectrum into 250 points
 void zbitx_get_spectrum(char *buff) {
 
     int n_bins = (int)((1.0 * spectrum_span) / 46.875);
@@ -2358,13 +2045,13 @@ void zbitx_poll(int all) {
         strcat(buff, "}"); // terminate the block
         // spectrum can be lost mometarily, it is alright
         delay(1);
-        i2cbb_write_i2c_block_data(0x0a, '{', strlen(buff), buff);
+        i2cbb_write_i2c_block_data(ZBITX_I2C_ADDRESS, '{', strlen(buff), buff);
     }
 
     // transmit in_tx
     sprintf(buff, "IN_TX %d}", in_tx);
     delay(1);
-    i2cbb_write_i2c_block_data(0x0a, '{', strlen(buff), buff);
+    i2cbb_write_i2c_block_data(ZBITX_I2C_ADDRESS, '{', strlen(buff), buff);
 
     if (update_logs) {
         zbitx_logs();
@@ -2373,7 +2060,7 @@ void zbitx_poll(int all) {
 
     int reply_length;
 
-    if ((reply_length = i2cbb_read_rll(0xa, buff)) != -1) {
+    if ((reply_length = i2cbb_read_rll(ZBITX_I2C_ADDRESS, buff)) != -1) {
         // zero terminate the reply
         buff[reply_length] = 0;
 
@@ -2395,6 +2082,14 @@ void zbitx_poll(int all) {
             remote_execute(buff);
         }
     }
+
+	// Update the CW input method in case it changed
+	cw_method = CW_STRAIGHT;
+	if (cw_input->value[6] == NULL)
+		cw_method = CW_IAMBIC;
+	if (cw_input->value[6] == 'B')
+		cw_method = CW_IAMBICB;
+
     last_update = this_time;
 }
 
@@ -2431,7 +2126,7 @@ bool ui_tick() {
     ticks++;
 
     while (q_length(&q_remote_commands) > 0) {
-        // read each command until the
+        // read each command until the end
         char remote_cmd[1000];
         int c, i;
         for (i = 0; i < sizeof(remote_cmd) - 2 && (c = q_read(&q_remote_commands)) >= ' '; i++) {
@@ -2466,15 +2161,9 @@ bool ui_tick() {
         // write_console(FONT_LOG, message);
     }
 
-    // the modem tick is called on every tick
+    // the modem poll is called on every tick
     // each modem has to optimize for efficient operation
-
     modem_poll(mode_id(f_mode->value), ticks);
-
-    /*
-            if (ticks % 20 == 0){
-            }
-    */
 
     int tick_count = 50;
     switch (mode_id(f_mode->value)) {
@@ -2510,15 +2199,6 @@ bool ui_tick() {
         f = get_field("waterfall");
         update_field(f);
 
-        if (digitalRead(ENC1_SW) == 0) {
-            // flip between mode and volume
-            if (f_focus && !strcmp(f_focus->label, "AUDIO"))
-                focus_field(get_field("r1:mode"));
-            else
-                focus_field(get_field("r1:volume"));
-            printf("Focus is on %s\n", f_focus->label);
-        }
-
         if (record_start)
             update_field(get_field("#record"));
 
@@ -2542,9 +2222,9 @@ bool ui_tick() {
     // straight key in CW
     if (f && (!strcmp(f_mode->value, "2TONE") || !strcmp(f_mode->value, "LSB") || !strcmp(f_mode->value, "AM") ||
               !strcmp(f_mode->value, "USB"))) {
-        if (ptt_state == LOW && in_tx == 0)
+        if (dot_state == LOW && in_tx == 0)
             tx_on(TX_PTT);
-        else if (ptt_state == HIGH && in_tx == TX_PTT)
+        else if (dot_state == HIGH && in_tx == TX_PTT)
             tx_off();
     }
 
@@ -3180,11 +2860,14 @@ int main(int argc, char *argv[]) {
     active_layout = main_controls;
 
     // unlink any pending ft8 transmission
-    unlink("/home/pi/sbitx/ft8tx_float.raw");
+    unlink("/home/pi/sbitx/ft8tx_float.raw");	// Assumes "pi" user, needs change to getenv("HOME")
     call_wipe();
 
     // we cache some fields for fast lookup
     cw_input = get_field_by_label("CW_INPUT");
+    if (cw_input == NULL) {
+        printf("ERROR: cw_input must point to the CW INPUT setting\n");
+    }
     f_mode = get_field_by_label("MODE");
     f_pitch = get_field_by_label("PITCH");
     f_text_in = get_field_by_label("TEXT");
@@ -3251,7 +2934,7 @@ int main(int argc, char *argv[]) {
     write_console(FONT_LOG, VER_STR);
     write_console(FONT_LOG, "\r\nEnter \\help for help\r\n");
 
-    if (strcmp(get_field("#mycallsign")->value, "NOBADY")) {
+    if (strcmp(get_field("#mycallsign")->value, "NOBODY")) {
         sprintf(buff, "\nWelcome %s\nYour grid is %s\n", get_field("#mycallsign")->value, get_field("#mygrid")->value);
         write_console(FONT_LOG, buff);
     } else
