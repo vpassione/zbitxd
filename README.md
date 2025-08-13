@@ -1,5 +1,8 @@
 # Introduction
 
+This is my experimental version of DG0JDE's zbitxd version of the zBitx transceiver code. If you want a working version of zBitx without the GTK GUI, please use his version:
+- https://github.com/dg0jde/zbitxd
+
 This is a daemon for controlling the zBitx transceiver. It is based on the official GTK client, from which all GTK GUI elements have been removed. This means that a graphical desktop environment is no longer required. The device is still controlled via the touchscreen of the zBitx frontend or via a browser. The daemon is started and stopped with the support of systemd.
 
 At the moment, installation is only recommended for users who have experience with Linux and Raspberry Pi or are willing to learn. It is recommended to install it on an additional SD card with the latest Raspberry Pi OS. Only this is described below. One advantage is that if problems arise, you can always revert to the original software by simply changing the SD cards. However, installation and use on the original SD card is possible in principle.
@@ -24,15 +27,26 @@ At the moment, installation is only recommended for users who have experience wi
 - Install Raspberry Pi Imager on the PC
 - Insert the new SD card into the connected card reader
 - Start Raspberry Pi Imager and select the following settings:
+- Raspberry Pi Device: RASPBERRY PI ZERO 2W
 - Operating System: Raspberry Pi OS (other) > Raspberry Pi OS Lite (64-bit)
 - Storage: select the new SD card
-- Advanced Options (click on the gear icon):
+  - The following instructions are for Raspberry Pi Imager Version 1.9 and up
+  - For older versions, select the gear icon (advanced options)
+- Click "NEXT": "Would you like to apply OS customisation settings?"
+- Click "EDIT SETTINGS"
+- General tab:
   - Set hostname: zbitx
-  - Activate “Enable SSH”, authentication with password or public key
-  - Activate “Set username and password” and enter these
-  - Activate “Configure wireless LAN” and set it up
-  - Activate “Set locale settings,” select “Time zone” and “Keyboard layout”
-  - Save
+  - Set username and password: "pi" and "hf12345"
+  - Configure wireless LAN: Enter your WiFi SSID, password and Wireless LAN country
+  - Set locale settings: select “Time zone” and “Keyboard layout”
+- Services tab:
+  - Enable SSH: Use password authentication
+- Options tab:
+  - Select: "Eject media when finished"
+  - Select: "Enable telemetry"
+- SAVE
+- YES
+- Are you sure you want to continue?: YES
 
 ## WiFi problems
 
@@ -61,6 +75,7 @@ echo “options brcmfmac feature_disable=0x2000” | sudo tee /etc/modprobe.d/br
 sudo reboot
 ```
 After restarting, the zBitx should connect to the WiFi network.
+The first boot will take several minutes. 
 
 ## Installing zbitxd
 
