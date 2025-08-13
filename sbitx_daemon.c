@@ -1755,12 +1755,12 @@ void init_gpio_pins() {
 
 int key_poll() {
 
-	if (cw_method = CW_STRAIGHT) {							// Straight Key
+	if (cw_method == CW_STRAIGHT) {							// Straight Key
 		if (dot_state == LOW)
 			return CW_DOWN;
 		return CW_IDLE;
 	}
-	if (cw_method = CW_IAMBIC || cw_method = CW_IAMBICB) {	// Iambic
+	if (cw_method == CW_IAMBIC || cw_method == CW_IAMBICB) {	// Iambic
 		int key = CW_IDLE;
 		if (dot_state == LOW)
             key |= CW_DOT;
@@ -1794,6 +1794,16 @@ void hamlib_tx(int tx_input) {
 }
 
 int get_cw_delay() { return atoi(get_field("#cwdelay")->value); }
+
+int get_cw_input_method() {
+    struct field *f = get_field("#cwinput");
+    if (!strcmp(f->value, "IAMBIC"))
+        return CW_IAMBIC;
+    else if (!strcmp(f->value, "IAMBICB"))
+        return CW_IAMBICB;
+    else
+        return CW_STRAIGHT;
+}
 
 int get_pitch() {
     struct field *f = get_field("rx_pitch");
@@ -2085,7 +2095,7 @@ void zbitx_poll(int all) {
 
 	// Update the CW input method in case it changed
 	cw_method = CW_STRAIGHT;
-	if (cw_input->value[6] == NULL)
+	if (cw_input->value[6] == '\0')
 		cw_method = CW_IAMBIC;
 	if (cw_input->value[6] == 'B')
 		cw_method = CW_IAMBICB;
@@ -2121,7 +2131,7 @@ void zbitx_init() {
 }
 
 bool ui_tick() {
-    int static ticks = 0;
+    static int ticks = 0;
 
     ticks++;
 
@@ -2147,20 +2157,6 @@ bool ui_tick() {
     // check the tuning knob
     struct field *f = get_field("r1:freq");
 
-    while (tuning_ticks > 0) {
-        edit_field(f, MIN_KEY_DOWN);
-        tuning_ticks--;
-        // sprintf(message, "tune-\r\n");
-        // write_console(FONT_LOG, message);
-    }
-
-    while (tuning_ticks < 0) {
-        edit_field(f, MIN_KEY_UP);
-        tuning_ticks++;
-        // sprintf(message, "tune+\r\n");
-        // write_console(FONT_LOG, message);
-    }
-
     // the modem poll is called on every tick
     // each modem has to optimize for efficient operation
     modem_poll(mode_id(f_mode->value), ticks);
@@ -2178,7 +2174,6 @@ bool ui_tick() {
         tick_count = 100;
     }
     if (ticks >= tick_count) {
-
         char response[6], cmd[10];
         cmd[0] = 1;
 
@@ -2228,13 +2223,6 @@ bool ui_tick() {
             tx_off();
     }
 
-    int scroll = enc_read(&enc_a);
-    if (scroll && f_focus) {
-        if (scroll < 0)
-            edit_field(f_focus, MIN_KEY_DOWN);
-        else
-            edit_field(f_focus, MIN_KEY_UP);
-    }
     return TRUE;
 }
 
